@@ -1,0 +1,8 @@
+storage/sessions/*
+!storage/sessions/.gitkeep
+api-laravel/vendor/
+api-laravel/storage/logs/*.log
+web-next/node_modules/
+web-next/.next/
+mobile-expo/node_modules/
+.expo/

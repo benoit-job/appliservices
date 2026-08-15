@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 420" role="img" aria-labelledby="title desc">
+  <title id="title">KOUECONSOLIDATED</title>
+  <desc id="desc">Logo stylisé bleu et or pour KOUE MANAGER.</desc>
+  <defs>
+    <linearGradient id="blue" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#0479dc"/>
+      <stop offset=".55" stop-color="#083f83"/>
+      <stop offset="1" stop-color="#031f4e"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#fff064"/>
+      <stop offset=".45" stop-color="#ffc107"/>
+      <stop offset="1" stop-color="#b77400"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="12" stdDeviation="8" flood-color="#0f172a" flood-opacity=".18"/>
+    </filter>
+  </defs>
+  <rect width="720" height="420" fill="#ffffff"/>
+  <g filter="url(#shadow)" transform="translate(174 40)">
+    <path fill="url(#blue)" d="M242 42h82v242h-82z"/>
+    <path fill="url(#gold)" d="M168 92h62v194h-62z"/>
+    <path fill="url(#blue)" d="M104 140h50v146h-50z"/>
+    <path fill="url(#blue)" d="M292 148 406 34 292 286 214 286 214 154 270 154 270 232 330 96z"/>
+    <path fill="url(#gold)" d="M28 288c104-84 206-116 332-98 60 8 112-6 152-42l-22-23 92-33-32 94-24-26c-45 50-104 74-176 66-118-14-210 8-322 84z"/>
+    <path fill="url(#blue)" d="M24 280c120-30 216-18 332 14 54 15 116-18 162-62l-24-20c-42 34-84 50-132 40-128-28-232-30-338 28z" opacity=".98"/>
+  </g>
+  <text x="360" y="340" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-weight="900" font-size="58" letter-spacing="0" fill="#083f83">KOUE<tspan fill="#eab308">CONSOLIDATED</tspan></text>
+  <text x="360" y="382" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="24" letter-spacing="10" fill="#16345c">GROUPE MULTI-ACTIVITÉS</text>
+</svg>
