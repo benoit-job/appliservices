@@ -8,7 +8,7 @@
     "userInterfaceStyle": "light",
     "assetBundlePatterns": ["**/*"],
     "extra": {
-      "apiUrl": "http://127.0.0.1:8020/api/v1"
+      "apiUrl": "http://192.168.1.80:8020/api/v1"
     }
   }
 }

@@ -1,6 +1,10 @@
 "use client";
 
 import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
+import { ChartGrid } from "../components/ChartPanel";
+import { ChartFiltersBar, defaultChartFilters, filtersToQuery } from "../components/ChartFilters";
+import type { ChartFilters, Graphique } from "../types/charts";
+
 
 type ApiResponse<T> = T & { statut: "ok" | "erreur"; message?: string };
 type User = { id: number; nom: string; email: string; role?: { nom: string } };
@@ -14,6 +18,7 @@ type References = { types_activites: Named[]; categories_transactions: Array<Nam
 
 const routes = [
   ["tableau-bord", "Tableau de bord", "▦"],
+  ["vue-ensemble", "Vue d'ensemble", "◫"],
   ["activites", "Activités", "▣"],
   ["versements", "Versements", "◉"],
   ["depenses", "Dépenses", "◍"],
@@ -27,11 +32,16 @@ export default function Home() {
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [route, setRoute] = useState("tableau-bord");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState("");
   const [refs, setRefs] = useState<References>({ types_activites: [], categories_transactions: [], activites: [], utilisateurs: [] });
-  const [dashboard, setDashboard] = useState<{ resume?: Resume; activites?: Activite[]; transactions?: Transaction[]; echeances?: Echeance[] }>({});
+  const [dashboard, setDashboard] = useState<{ resume?: Resume; activites?: Activite[]; transactions?: Transaction[]; echeances?: Echeance[]; graphiques?: Graphique[] }>({});
+  const [vueEnsemble, setVueEnsemble] = useState<Graphique[]>([]);
+  const [chartFilters, setChartFilters] = useState<ChartFilters>(defaultChartFilters);
+  const [chartFiltersDraft, setChartFiltersDraft] = useState<ChartFilters>(defaultChartFilters);
   const [activites, setActivites] = useState<Activite[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [echeances, setEcheances] = useState<Echeance[]>([]);
@@ -96,6 +106,19 @@ export default function Home() {
   async function chargerRoute(nextRoute: string) {
     await runLoader(async () => {
       if (nextRoute === "tableau-bord") setDashboard(await api("tableau-bord"));
+      if (nextRoute === "vue-ensemble") {
+        const query = filtersToQuery(chartFilters);
+        const response = await api<{ graphiques: Graphique[]; filtres: ChartFilters }>(`graphiques/vue-ensemble?${query}`);
+        setVueEnsemble(response.graphiques ?? []);
+        if (response.filtres) {
+          setChartFilters((prev) => ({
+            ...prev,
+            ...response.filtres,
+            activite_id: String(response.filtres.activite_id ?? ""),
+            type_transaction: String(response.filtres.type_transaction ?? ""),
+          }));
+        }
+      }
       if (nextRoute === "activites") setActivites((await api<{ donnees: Activite[] }>("activites")).donnees);
       if (nextRoute === "versements") setEcheances((await api<{ donnees: { data: Echeance[] } }>("echeances-versements")).donnees.data);
       if (nextRoute === "depenses") setTransactions((await api<{ donnees: { data: Transaction[] } }>("transactions?type=decaissement")).donnees.data);
@@ -138,7 +161,23 @@ export default function Home() {
       setToken(null);
       setUser(null);
       setRoute("tableau-bord");
+      setMobileMenuOpen(false);
+      setSidebarCollapsed(false);
     }
+  }
+
+  function toggleNavigation() {
+    if (window.matchMedia("(max-width: 760px)").matches) {
+      setMobileMenuOpen((open) => !open);
+      return;
+    }
+
+    setSidebarCollapsed((collapsed) => !collapsed);
+  }
+
+  function openRoute(nextRoute: string) {
+    setRoute(nextRoute);
+    setMobileMenuOpen(false);
   }
 
   async function submitActivite(event: FormEvent<HTMLFormElement>) {
@@ -167,6 +206,20 @@ export default function Home() {
     await chargerRoute("inventaire");
   }
 
+  async function appliquerFiltresGraphiques() {
+    setChartFilters(chartFiltersDraft);
+    await runLoader(async () => {
+      const query = filtersToQuery(chartFiltersDraft);
+      const response = await api<{ graphiques: Graphique[] }>(`graphiques/vue-ensemble?${query}`);
+      setVueEnsemble(response.graphiques ?? []);
+    });
+  }
+
+  useEffect(() => {
+    if (token && route === "vue-ensemble") {
+      setChartFiltersDraft(chartFilters);
+    }
+  }, [route, token]);
   async function genererEcheances() {
     await api("echeances-versements/generer", { method: "POST", body: "{}" });
     await chargerRoute("versements");
@@ -177,14 +230,42 @@ export default function Home() {
       <>
         <Loader visible={loading} progress={progress} />
         <main className="login-screen">
+          <section className="login-hero">
+            <div className="login-brand-mark">
+              <img src="/logo-koue.svg" alt="KOUECONSOLIDATED" />
+            </div>
+            <div className="login-copy">
+              <span className="login-kicker">Groupe multi-activités</span>
+              <h1>KOUE MANAGER</h1>
+              <p>Un poste de contrôle clair pour suivre les motos, l’élevage, les versements, les dépenses et l’inventaire depuis le même compte.</p>
+            </div>
+            <div className="login-metrics" aria-label="Aperçu des modules">
+              <div><strong>4</strong><span>activités prêtes</span></div>
+              <div><strong>API</strong><span>web et mobile</span></div>
+              <div><strong>100%</strong><span>JSON sécurisé</span></div>
+            </div>
+          </section>
           <section className="login-panel">
-            <img src="/logo-koue.svg" alt="KOUECONSOLIDATED" className="login-logo" />
-            <div><h1>KOUE MANAGER</h1><p>Gestion, suivi et contrôle des activités. API Laravel commune pour le web et le mobile.</p></div>
-            <form className="form" onSubmit={login}>
+            <div className="login-card-head">
+              <span className="secure-pill">Accès sécurisé</span>
+              <h2>Connexion</h2>
+              <p>Entrez dans votre espace de gestion KOUECONSOLIDATED.</p>
+            </div>
+            <form className="form login-form" onSubmit={login}>
               {error && <div className="alert">{error}</div>}
-              <label>Email<input name="email" type="email" defaultValue="admin@kouemanager.local" required /></label>
-              <label>Mot de passe<input name="mot_de_passe" type="password" defaultValue="Admin@1234" required /></label>
-              <button className="btn primary" type="submit">Se connecter</button>
+              <label>
+                Adresse email
+                <input name="email" type="email" defaultValue="admin@kouemanager.local" autoComplete="email" required />
+              </label>
+              <label>
+                Mot de passe
+                <input name="mot_de_passe" type="password" defaultValue="Admin@1234" autoComplete="current-password" required />
+              </label>
+              <button className="btn primary login-submit" type="submit">Se connecter</button>
+              <div className="login-footnote">
+                <span>Laravel Sanctum</span>
+                <span>Synchronisation web/mobile</span>
+              </div>
             </form>
           </section>
         </main>
@@ -195,19 +276,20 @@ export default function Home() {
   return (
     <>
       <Loader visible={loading} progress={progress} />
-      <main className="app-shell">
+      <main className={`app-shell ${sidebarCollapsed ? "sidebar-collapsed" : ""} ${mobileMenuOpen ? "mobile-menu-open" : ""}`}>
         <aside className="sidebar">
           <div className="brand"><img src="/logo-koue.svg" alt="" /><strong>KOUE</strong></div>
-          <nav>{routes.map(([key, label, icon]) => <button key={key} className={route === key ? "active" : ""} onClick={() => setRoute(key)}><span>{icon}</span>{label}</button>)}</nav>
+          <nav>{routes.map(([key, label, icon]) => <button key={key} className={route === key ? "active" : ""} onClick={() => openRoute(key)} title={label} aria-label={label}><span>{icon}</span>{label}</button>)}</nav>
           <small>KOUECONSOLIDATED<br />Groupe multi-activités</small>
         </aside>
+        <button className="sidebar-backdrop" type="button" aria-label="Fermer le menu" onClick={() => setMobileMenuOpen(false)} />
         <section className="main-area">
           <header className="topbar">
-            <button className="icon-button">☰</button>
+            <button className="icon-button menu-button" type="button" onClick={toggleNavigation} aria-label="Ouvrir ou fermer le menu" aria-expanded={mobileMenuOpen || !sidebarCollapsed}>☰</button>
             <label className="search">⌕<input placeholder="Search in Koue Manager" /></label>
             <div className="top-actions">
               <span className="badge-dot">5</span><button className="icon-button">▦</button><span className="flag">FR</span><button className="icon-button">☼</button><span className="badge-dot red">3</span>
-              <button className="avatar" onClick={logout} title="Déconnexion">{initials(user.nom)}</button>
+              <button className="logout-icon-button" onClick={logout} title="Déconnexion" aria-label="Déconnexion"><span className="logout-icon" aria-hidden="true" /></button>
             </div>
           </header>
           <section className="content">{renderRoute()}</section>
@@ -222,7 +304,15 @@ export default function Home() {
       return <>
         <PageTitle title="Tableau de bord" subtitle="Vue consolidée des activités, versements, dépenses et inventaire." />
         <div className="cards"><Card label="Activités" value={resume?.activites ?? 0} /><Card label="Revenus" value={money(resume?.revenus)} /><Card label="Dépenses" value={money(resume?.decaissements)} /><Card label="Résultat" value={money(resume?.resultat)} /><Card label="Inventaire" value={money(resume?.inventaire)} /></div>
+        <ChartGrid graphiques={dashboard.graphiques ?? []} compact />
         <Grid><Panel title="Activités récentes"><Table heads={["Code", "Activité", "Type", "Versement", "Statut"]} rows={(dashboard.activites ?? []).map((a) => [a.code, a.nom, a.type_activite?.nom ?? "-", money(a.montant_versement), pill(a.statut)])} /></Panel><Panel title="Échéances"><Table heads={["Activité", "Période", "Attendu", "Payé", "Statut"]} rows={(dashboard.echeances ?? []).map((e) => [e.activite?.code ?? "-", `${date(e.debut_periode)} - ${date(e.fin_periode)}`, money(e.montant_attendu), money(e.montant_paye), pill(e.statut)])} /></Panel></Grid>
+      </>;
+    }
+    if (route === "vue-ensemble") {
+      return <>
+        <PageTitle title="Vue d'ensemble" subtitle="Tous les graphiques et indicateurs avec filtres précis." />
+        <ChartFiltersBar filters={chartFiltersDraft} activites={refs.activites} onChange={setChartFiltersDraft} onApply={() => void appliquerFiltresGraphiques()} />
+        <ChartGrid graphiques={vueEnsemble} />
       </>;
     }
     if (route === "activites") return <><PageTitle title="Activités" subtitle="Créez tout nouveau business sans modifier le schéma." /><Grid><Panel title="Nouvelle activité"><form className="form compact" onSubmit={submitActivite}><Select name="type_activite_id" label="Type" items={refs.types_activites} /><input name="code" placeholder="Code" required /><input name="nom" placeholder="Nom de l’activité" required /><input name="montant_versement" type="number" placeholder="Versement attendu" defaultValue={0} /><input name="date_demarrage" type="date" defaultValue={new Date().toISOString().slice(0, 10)} /><button className="btn primary">Enregistrer</button></form></Panel><Panel title="Liste"><Table heads={["Code", "Nom", "Type", "Versement", "Statut"]} rows={activites.map((a) => [a.code, a.nom, a.type_activite?.nom ?? "-", money(a.montant_versement), pill(a.statut)])} /></Panel></Grid></>;
@@ -280,6 +370,3 @@ function date(value: string) {
   return new Intl.DateTimeFormat("fr-FR").format(new Date(value));
 }
 
-function initials(name: string) {
-  return name.split(" ").map((part) => part[0]).slice(0, 2).join("").toUpperCase();
-}

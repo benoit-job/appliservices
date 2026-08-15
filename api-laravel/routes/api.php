@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\V1\ActiviteController;
 use App\Http\Controllers\Api\V1\AuditController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\DashboardController;
+use App\Http\Controllers\Api\V1\GraphiqueController;
 use App\Http\Controllers\Api\V1\EcheanceVersementController;
 use App\Http\Controllers\Api\V1\InventaireController;
 use App\Http\Controllers\Api\V1\NotificationController;
@@ -25,6 +26,9 @@ Route::prefix('v1')->group(function () {
         Route::post('deconnexion', [AuthController::class, 'deconnexion']);
         Route::get('references', [ReferenceController::class, 'index']);
         Route::get('tableau-bord', [DashboardController::class, 'index']);
+        Route::get('graphiques/types', [GraphiqueController::class, 'types']);
+        Route::get('graphiques/vue-ensemble', [GraphiqueController::class, 'vueEnsemble']);
+        Route::get('graphiques', [GraphiqueController::class, 'show']);
 
         Route::get('types-activites', [TypeActiviteController::class, 'index']);
         Route::post('types-activites', [TypeActiviteController::class, 'store']);

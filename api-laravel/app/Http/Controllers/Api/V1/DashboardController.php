@@ -6,11 +6,15 @@ use App\Models\Activite;
 use App\Models\ArticleInventaire;
 use App\Models\EcheanceVersement;
 use App\Models\Transaction;
+use App\Services\ChartDataService;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Facades\DB;
 
 class DashboardController extends ApiController
 {
+    public function __construct(private readonly ChartDataService $charts)
+    {
+    }
+
     public function index(): JsonResponse
     {
         $revenus = (float) Transaction::where('type', 'revenu')->where('statut_validation', 'valide')->sum('montant');
@@ -24,6 +28,12 @@ class DashboardController extends ApiController
             ->limit(8)
             ->get();
 
+        $filtres = [
+            'debut' => now()->startOfMonth()->toDateString(),
+            'fin' => now()->endOfMonth()->toDateString(),
+            'granularite' => 'jour',
+        ];
+
         return $this->ok([
             'resume' => [
                 'activites' => Activite::where('statut', 'actif')->count(),
@@ -35,6 +45,16 @@ class DashboardController extends ApiController
                     ->selectRaw('COALESCE(SUM(quantite * valeur_unitaire), 0) as total')
                     ->value('total'),
             ],
+            'graphiques' => $this->charts->vueEnsemble($filtres, [
+                'evolution_financiere',
+                'repartition_activites',
+                'resultat_activites',
+                'echeances_statut',
+                'repartition_categories',
+                'inventaire_activite',
+                'modes_paiement',
+                'recouvrement_echeances',
+            ]),
             'activites' => $activites,
             'transactions' => Transaction::with(['activite:id,nom,code', 'categorie:id,nom'])
                 ->latest('date_transaction')
