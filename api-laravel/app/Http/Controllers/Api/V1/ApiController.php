@@ -39,4 +39,14 @@ abstract class ApiController extends Controller
             'agent_utilisateur' => substr((string) $request->userAgent(), 0, 255),
         ]);
     }
+
+    protected function estCompteEntreprise(Request $request): bool
+    {
+        return (bool) $request->user()?->est_compte_entreprise;
+    }
+
+    protected function plateformeId(Request $request): ?int
+    {
+        return $request->user()?->plateforme_id;
+    }
 }

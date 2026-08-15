@@ -10,12 +10,16 @@ use Illuminate\Validation\Rule;
 
 class UtilisateurController extends ApiController
 {
-    public function index(): JsonResponse
+    public function index(Request $request): JsonResponse
     {
+        $query = User::with('role:id,nom,slug')->latest();
+
+        if ($request->has('plateforme_id')) {
+            $query->where('plateforme_id', $request->input('plateforme_id'));
+        }
+
         return $this->ok([
-            'donnees' => User::with('role:id,nom,slug')
-                ->latest()
-                ->get(),
+            'donnees' => $query->get(),
         ]);
     }
 

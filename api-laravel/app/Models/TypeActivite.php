@@ -3,16 +3,19 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use App\Models\Traits\Multitenant;
 
 class TypeActivite extends Model
 {
-    use SoftDeletes;
+    use SoftDeletes, Multitenant;
 
     protected $table = 'types_activites';
 
     protected $fillable = [
+        'plateforme_id',
         'nom',
         'slug',
         'a_versement_recurrent',
@@ -32,5 +35,10 @@ class TypeActivite extends Model
     public function activites(): HasMany
     {
         return $this->hasMany(Activite::class);
+    }
+
+    public function plateforme(): BelongsTo
+    {
+        return $this->belongsTo(Plateforme::class);
     }
 }

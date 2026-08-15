@@ -7,14 +7,21 @@ import type { ChartFilters, Graphique } from "../types/charts";
 
 
 type ApiResponse<T> = T & { statut: "ok" | "erreur"; message?: string };
-type User = { id: number; nom: string; email: string; role?: { nom: string } };
+type Role = { id: number; nom: string; slug?: string };
+type User = { id: number; role_id?: number; nom: string; email: string; telephone?: string; statut?: string; derniere_connexion?: string; role?: { nom: string } };
 type Resume = { activites: number; revenus: number; decaissements: number; resultat: number; retards: number; inventaire: number };
-type Activite = { id: number; nom: string; code: string; statut: string; montant_versement: string | number; type_activite?: { nom: string; couleur?: string } };
-type Transaction = { id: number; type: "revenu" | "decaissement"; montant: string | number; date_transaction: string; mode_paiement: string; activite?: { nom: string; code: string }; categorie?: { nom: string } };
+type TypeActivite = { id: number; nom: string; slug: string; a_versement_recurrent: boolean; frequence_versement: string; schema_champs?: Record<string, string> | null; icone?: string; couleur?: string; actif: boolean; activites_count?: number };
+type Activite = { id: number; type_activite_id?: number; nom: string; code: string; statut: string; montant_versement: string | number; attributs?: Record<string, unknown>; type_activite?: { nom: string; couleur?: string }; gerant?: { nom: string; email: string } };
+type Transaction = { id: number; type: "revenu" | "decaissement"; montant: string | number; date_transaction: string; mode_paiement: string; statut_validation?: string; note?: string; activite?: { nom: string; code: string }; categorie?: { nom: string }; auteur?: { nom: string } };
 type Echeance = { id: number; debut_periode: string; fin_periode: string; montant_attendu: string | number; montant_paye: string | number; statut: string; activite?: { nom: string; code: string } };
-type Article = { id: number; nom: string; type_article: string; quantite: string | number; unite: string; valeur_unitaire: string | number; activite?: { nom: string; code: string } };
+type Article = { id: number; nom: string; type_article: string; quantite: string | number; unite: string; valeur_unitaire: string | number; seuil_alerte?: string | number | null; activite?: { nom: string; code: string } };
+type NotificationItem = { id: number; titre: string; message: string; type_notification: string; lu: boolean; created_at?: string };
+type AuditLog = { id: number; action: string; entite: string; entite_id?: number; adresse_ip?: string; created_at?: string; utilisateur?: { nom: string; email: string } };
+type RapportActivite = { id: number; code: string; nom: string; type_activite?: string; revenus: number; decaissements: number; resultat: number };
+type Rapport = { periode?: { debut: string; fin: string }; totaux?: { revenus: number; decaissements: number; resultat: number }; activites?: RapportActivite[] };
+type Parametre = { cle: string; valeur: string; description: string };
 type Named = { id: number; nom: string };
-type References = { types_activites: Named[]; categories_transactions: Array<Named & { nature: string }>; activites: Array<Named & { code: string }>; utilisateurs: Named[] };
+type References = { types_activites: TypeActivite[]; categories_transactions: Array<Named & { nature: string }>; activites: Array<Named & { code: string }>; utilisateurs: User[]; roles: Role[] };
 
 const routes = [
   ["tableau-bord", "Tableau de bord", "▦"],
@@ -24,7 +31,10 @@ const routes = [
   ["depenses", "Dépenses", "◍"],
   ["inventaire", "Inventaire", "▤"],
   ["rapports", "Rapports", "▥"],
+  ["types-activites", "Types d'activités", "◧"],
   ["utilisateurs", "Utilisateurs", "◎"],
+  ["notifications", "Notifications", "◌"],
+  ["audit", "Journal d'audit", "◷"],
   ["parametres", "Paramètres", "⚙"],
 ] as const;
 
@@ -37,7 +47,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState("");
-  const [refs, setRefs] = useState<References>({ types_activites: [], categories_transactions: [], activites: [], utilisateurs: [] });
+  const [refs, setRefs] = useState<References>({ types_activites: [], categories_transactions: [], activites: [], utilisateurs: [], roles: [] });
   const [dashboard, setDashboard] = useState<{ resume?: Resume; activites?: Activite[]; transactions?: Transaction[]; echeances?: Echeance[]; graphiques?: Graphique[] }>({});
   const [vueEnsemble, setVueEnsemble] = useState<Graphique[]>([]);
   const [chartFilters, setChartFilters] = useState<ChartFilters>(defaultChartFilters);
@@ -46,9 +56,12 @@ export default function Home() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [echeances, setEcheances] = useState<Echeance[]>([]);
   const [articles, setArticles] = useState<Article[]>([]);
-  const [rapport, setRapport] = useState<any>(null);
+  const [rapport, setRapport] = useState<Rapport | null>(null);
   const [utilisateurs, setUtilisateurs] = useState<User[]>([]);
-  const [parametres, setParametres] = useState<Array<{ cle: string; valeur: string; description: string }>>([]);
+  const [typesActivites, setTypesActivites] = useState<TypeActivite[]>([]);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [parametres, setParametres] = useState<Parametre[]>([]);
 
   const api = useMemo(() => {
     return async <T,>(path: string, options: RequestInit = {}) => {
@@ -64,13 +77,15 @@ export default function Home() {
   }, [token]);
 
   useEffect(() => {
-    const savedToken = localStorage.getItem("koue_token");
-    const savedUser = localStorage.getItem("koue_user");
-    if (savedToken && savedUser) {
-      setToken(savedToken);
-      setUser(JSON.parse(savedUser));
-    }
-    void runLoader(() => Promise.resolve());
+    queueMicrotask(() => {
+      const savedToken = localStorage.getItem("koue_token");
+      const savedUser = localStorage.getItem("koue_user");
+      if (savedToken && savedUser) {
+        setToken(savedToken);
+        setUser(JSON.parse(savedUser));
+      }
+      void runLoader(() => Promise.resolve());
+    });
   }, []);
 
   useEffect(() => {
@@ -97,8 +112,12 @@ export default function Home() {
 
   async function chargerBase() {
     await runLoader(async () => {
-      const references = await api<References>("references");
+      const [references, alertes] = await Promise.all([
+        api<References>("references"),
+        api<{ donnees: NotificationItem[] }>("notifications"),
+      ]);
       setRefs(references);
+      setNotifications(alertes.donnees ?? []);
       await chargerRoute(route);
     });
   }
@@ -123,9 +142,12 @@ export default function Home() {
       if (nextRoute === "versements") setEcheances((await api<{ donnees: { data: Echeance[] } }>("echeances-versements")).donnees.data);
       if (nextRoute === "depenses") setTransactions((await api<{ donnees: { data: Transaction[] } }>("transactions?type=decaissement")).donnees.data);
       if (nextRoute === "inventaire") setArticles((await api<{ donnees: { data: Article[] } }>("inventaire")).donnees.data);
-      if (nextRoute === "rapports") setRapport((await api<{ donnees: any }>("rapports/bilan")).donnees);
+      if (nextRoute === "rapports") setRapport((await api<{ donnees: Rapport }>("rapports/bilan")).donnees);
+      if (nextRoute === "types-activites") setTypesActivites((await api<{ donnees: TypeActivite[] }>("types-activites")).donnees);
       if (nextRoute === "utilisateurs") setUtilisateurs((await api<{ donnees: User[] }>("utilisateurs")).donnees);
-      if (nextRoute === "parametres") setParametres((await api<{ donnees: Array<{ cle: string; valeur: string; description: string }> }>("parametres")).donnees);
+      if (nextRoute === "notifications") setNotifications((await api<{ donnees: NotificationItem[] }>("notifications")).donnees);
+      if (nextRoute === "audit") setAuditLogs((await api<{ donnees: { data: AuditLog[] } }>("audit")).donnees.data);
+      if (nextRoute === "parametres") setParametres((await api<{ donnees: Parametre[] }>("parametres")).donnees);
     });
   }
 
@@ -183,7 +205,7 @@ export default function Home() {
   async function submitActivite(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const data = Object.fromEntries(new FormData(event.currentTarget));
-    await api("activites", { method: "POST", body: JSON.stringify({ ...data, attributs: {}, statut: "actif" }) });
+    await api("activites", { method: "POST", body: JSON.stringify({ ...data, attributs: parseJsonObject(data.attributs), statut: data.statut || "actif" }) });
     event.currentTarget.reset();
     await chargerBase();
     await chargerRoute("activites");
@@ -191,8 +213,11 @@ export default function Home() {
 
   async function submitTransaction(event: FormEvent<HTMLFormElement>, type: "revenu" | "decaissement") {
     event.preventDefault();
-    const data = Object.fromEntries(new FormData(event.currentTarget));
-    await api("transactions", { method: "POST", body: JSON.stringify({ ...data, type }) });
+    const data = new FormData(event.currentTarget);
+    data.set("type", type);
+    const justificatif = data.get("justificatif");
+    if (justificatif instanceof File && justificatif.size === 0) data.delete("justificatif");
+    await api("transactions", { method: "POST", body: data });
     event.currentTarget.reset();
     await chargerBase();
     await chargerRoute(type === "revenu" ? "versements" : "depenses");
@@ -206,6 +231,75 @@ export default function Home() {
     await chargerRoute("inventaire");
   }
 
+  async function submitMouvementArticle(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const data = Object.fromEntries(new FormData(event.currentTarget));
+    const articleId = String(data.article_id);
+    await api(`inventaire/${articleId}/mouvements`, { method: "POST", body: JSON.stringify(data) });
+    event.currentTarget.reset();
+    await chargerRoute("inventaire");
+  }
+
+  async function submitTypeActivite(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const data = Object.fromEntries(new FormData(event.currentTarget));
+    await api("types-activites", {
+      method: "POST",
+      body: JSON.stringify({
+        ...data,
+        a_versement_recurrent: data.a_versement_recurrent === "on",
+        actif: true,
+        schema_champs: parseSchema(String(data.schema_champs ?? "")),
+      }),
+    });
+    event.currentTarget.reset();
+    await chargerBase();
+    await chargerRoute("types-activites");
+  }
+
+  async function submitUtilisateur(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const data = Object.fromEntries(new FormData(event.currentTarget));
+    await api("utilisateurs", { method: "POST", body: JSON.stringify(data) });
+    event.currentTarget.reset();
+    await chargerBase();
+    await chargerRoute("utilisateurs");
+  }
+
+  async function submitParametres(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    const payload = parametres.map((parametre) => ({
+      cle: parametre.cle,
+      valeur: String(data.get(`valeur:${parametre.cle}`) ?? ""),
+      description: String(data.get(`description:${parametre.cle}`) ?? ""),
+    }));
+    const response = await api<{ donnees: Parametre[] }>("parametres", { method: "PUT", body: JSON.stringify({ parametres: payload }) });
+    setParametres(response.donnees);
+  }
+
+  async function filtrerRapport(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const query = new URLSearchParams(Object.fromEntries(new FormData(event.currentTarget)) as Record<string, string>).toString();
+    setRapport((await api<{ donnees: Rapport }>(`rapports/bilan?${query}`)).donnees);
+  }
+
+  async function figerRapport() {
+    const query = rapport?.periode ? new URLSearchParams(rapport.periode).toString() : "";
+    await api("rapports/figer" + (query ? `?${query}` : ""), { method: "POST", body: "{}" });
+    await chargerRoute("audit");
+  }
+
+  async function marquerNotificationLue(notificationId: number) {
+    await api(`notifications/${notificationId}/lue`, { method: "PATCH", body: "{}" });
+    await chargerRoute("notifications");
+  }
+
+  async function validerTransaction(transactionId: number, statut: "valide" | "rejete") {
+    await api(`transactions/${transactionId}/validation`, { method: "PATCH", body: JSON.stringify({ statut_validation: statut }) });
+    await chargerRoute("depenses");
+  }
+
   async function appliquerFiltresGraphiques() {
     setChartFilters(chartFiltersDraft);
     await runLoader(async () => {
@@ -217,9 +311,9 @@ export default function Home() {
 
   useEffect(() => {
     if (token && route === "vue-ensemble") {
-      setChartFiltersDraft(chartFilters);
+      queueMicrotask(() => setChartFiltersDraft(chartFilters));
     }
-  }, [route, token]);
+  }, [chartFilters, route, token]);
   async function genererEcheances() {
     await api("echeances-versements/generer", { method: "POST", body: "{}" });
     await chargerRoute("versements");
@@ -288,7 +382,7 @@ export default function Home() {
             <button className="icon-button menu-button" type="button" onClick={toggleNavigation} aria-label="Ouvrir ou fermer le menu" aria-expanded={mobileMenuOpen || !sidebarCollapsed}>☰</button>
             <label className="search">⌕<input placeholder="Search in Koue Manager" /></label>
             <div className="top-actions">
-              <span className="badge-dot">5</span><button className="icon-button">▦</button><span className="flag">FR</span><button className="icon-button">☼</button><span className="badge-dot red">3</span>
+              <span className="badge-dot">{routes.length}</span><button className="icon-button" type="button" onClick={() => openRoute("vue-ensemble")} title="Vue d'ensemble">▦</button><span className="flag">FR</span><button className="icon-button" type="button" title="Mode clair">☼</button><button className="badge-dot red" type="button" onClick={() => openRoute("notifications")} title="Notifications">{notifications.filter((item) => !item.lu).length}</button>
               <button className="logout-icon-button" onClick={logout} title="Déconnexion" aria-label="Déconnexion"><span className="logout-icon" aria-hidden="true" /></button>
             </div>
           </header>
@@ -300,14 +394,29 @@ export default function Home() {
 
   function renderRoute() {
     const resume = dashboard.resume;
+
     if (route === "tableau-bord") {
       return <>
         <PageTitle title="Tableau de bord" subtitle="Vue consolidée des activités, versements, dépenses et inventaire." />
-        <div className="cards"><Card label="Activités" value={resume?.activites ?? 0} /><Card label="Revenus" value={money(resume?.revenus)} /><Card label="Dépenses" value={money(resume?.decaissements)} /><Card label="Résultat" value={money(resume?.resultat)} /><Card label="Inventaire" value={money(resume?.inventaire)} /></div>
+        <div className="cards">
+          <Card label="Activités" value={resume?.activites ?? 0} />
+          <Card label="Revenus" value={money(resume?.revenus)} />
+          <Card label="Dépenses" value={money(resume?.decaissements)} />
+          <Card label="Résultat" value={money(resume?.resultat)} />
+          <Card label="Inventaire" value={money(resume?.inventaire)} />
+        </div>
         <ChartGrid graphiques={dashboard.graphiques ?? []} compact />
-        <Grid><Panel title="Activités récentes"><Table heads={["Code", "Activité", "Type", "Versement", "Statut"]} rows={(dashboard.activites ?? []).map((a) => [a.code, a.nom, a.type_activite?.nom ?? "-", money(a.montant_versement), pill(a.statut)])} /></Panel><Panel title="Échéances"><Table heads={["Activité", "Période", "Attendu", "Payé", "Statut"]} rows={(dashboard.echeances ?? []).map((e) => [e.activite?.code ?? "-", `${date(e.debut_periode)} - ${date(e.fin_periode)}`, money(e.montant_attendu), money(e.montant_paye), pill(e.statut)])} /></Panel></Grid>
+        <Grid>
+          <Panel title="Activités récentes">
+            <Table heads={["Code", "Activité", "Type", "Versement", "Statut"]} rows={(dashboard.activites ?? []).map((a) => [a.code, a.nom, a.type_activite?.nom ?? "-", money(a.montant_versement), pill(a.statut)])} />
+          </Panel>
+          <Panel title="Échéances">
+            <Table heads={["Activité", "Période", "Attendu", "Payé", "Statut"]} rows={(dashboard.echeances ?? []).map((e) => [e.activite?.code ?? "-", `${date(e.debut_periode)} - ${date(e.fin_periode)}`, money(e.montant_attendu), money(e.montant_paye), pill(e.statut)])} />
+          </Panel>
+        </Grid>
       </>;
     }
+
     if (route === "vue-ensemble") {
       return <>
         <PageTitle title="Vue d'ensemble" subtitle="Tous les graphiques et indicateurs avec filtres précis." />
@@ -315,13 +424,208 @@ export default function Home() {
         <ChartGrid graphiques={vueEnsemble} />
       </>;
     }
-    if (route === "activites") return <><PageTitle title="Activités" subtitle="Créez tout nouveau business sans modifier le schéma." /><Grid><Panel title="Nouvelle activité"><form className="form compact" onSubmit={submitActivite}><Select name="type_activite_id" label="Type" items={refs.types_activites} /><input name="code" placeholder="Code" required /><input name="nom" placeholder="Nom de l’activité" required /><input name="montant_versement" type="number" placeholder="Versement attendu" defaultValue={0} /><input name="date_demarrage" type="date" defaultValue={new Date().toISOString().slice(0, 10)} /><button className="btn primary">Enregistrer</button></form></Panel><Panel title="Liste"><Table heads={["Code", "Nom", "Type", "Versement", "Statut"]} rows={activites.map((a) => [a.code, a.nom, a.type_activite?.nom ?? "-", money(a.montant_versement), pill(a.statut)])} /></Panel></Grid></>;
-    if (route === "versements") return <><PageTitle title="Versements" subtitle="Générez les échéances et saisissez les paiements." action={<button className="btn gold" onClick={genererEcheances}>Générer la semaine</button>} /><Grid><Panel title="Nouveau versement"><form className="form compact" onSubmit={(e) => submitTransaction(e, "revenu")}><Select name="activite_id" label="Activité" items={refs.activites} /><Select name="categorie_id" label="Catégorie" items={refs.categories_transactions.filter((c) => c.nature === "revenu")} /><input name="montant" type="number" placeholder="Montant" required /><input name="date_transaction" type="date" defaultValue={new Date().toISOString().slice(0, 10)} /><PaymentSelect /><button className="btn primary">Enregistrer</button></form></Panel><Panel title="Échéances"><Table heads={["Activité", "Période", "Attendu", "Payé", "Statut"]} rows={echeances.map((e) => [e.activite?.nom ?? "-", `${date(e.debut_periode)} - ${date(e.fin_periode)}`, money(e.montant_attendu), money(e.montant_paye), pill(e.statut)])} /></Panel></Grid></>;
-    if (route === "depenses") return <><PageTitle title="Dépenses" subtitle="Décaissements, carburant, réparations, aliments, salaires." /><Grid><Panel title="Nouvelle dépense"><form className="form compact" onSubmit={(e) => submitTransaction(e, "decaissement")}><Select name="activite_id" label="Activité" items={refs.activites} /><Select name="categorie_id" label="Catégorie" items={refs.categories_transactions.filter((c) => c.nature === "decaissement")} /><input name="montant" type="number" placeholder="Montant" required /><input name="date_transaction" type="date" defaultValue={new Date().toISOString().slice(0, 10)} /><PaymentSelect /><button className="btn primary">Enregistrer</button></form></Panel><Panel title="Historique"><Table heads={["Date", "Activité", "Catégorie", "Montant", "Paiement"]} rows={transactions.map((t) => [date(t.date_transaction), t.activite?.nom ?? "-", t.categorie?.nom ?? "-", money(t.montant), t.mode_paiement])} /></Panel></Grid></>;
-    if (route === "inventaire") return <><PageTitle title="Inventaire" subtitle="Biens durables, stocks consommables et cheptel." /><Grid><Panel title="Nouvel article"><form className="form compact" onSubmit={submitArticle}><Select name="activite_id" label="Activité" items={refs.activites} /><input name="nom" placeholder="Nom" required /><select name="type_article"><option value="bien_durable">Bien durable</option><option value="stock_consommable">Stock consommable</option><option value="cheptel">Cheptel</option></select><input name="quantite" type="number" placeholder="Quantité" defaultValue={1} /><input name="unite" placeholder="Unité" defaultValue="unite" /><input name="valeur_unitaire" type="number" placeholder="Valeur unitaire" defaultValue={0} /><button className="btn primary">Enregistrer</button></form></Panel><Panel title="Articles"><Table heads={["Activité", "Article", "Type", "Quantité", "Valeur"]} rows={articles.map((a) => [a.activite?.nom ?? "-", a.nom, pill(a.type_article), `${a.quantite} ${a.unite}`, money(Number(a.quantite) * Number(a.valeur_unitaire))])} /></Panel></Grid></>;
-    if (route === "rapports") return <><PageTitle title="Rapports" subtitle="Bilan consolidé par activité sur la période courante." /><div className="cards"><Card label="Revenus" value={money(rapport?.totaux?.revenus)} /><Card label="Dépenses" value={money(rapport?.totaux?.decaissements)} /><Card label="Résultat" value={money(rapport?.totaux?.resultat)} /></div><Panel title="Détail par activité"><Table heads={["Code", "Activité", "Type", "Revenus", "Dépenses", "Résultat"]} rows={(rapport?.activites ?? []).map((a: any) => [a.code, a.nom, a.type_activite, money(a.revenus), money(a.decaissements), money(a.resultat)])} /></Panel></>;
-    if (route === "utilisateurs") return <><PageTitle title="Utilisateurs" subtitle="Comptes utilisables sur le web et le mobile avec le même token." /><Panel title="Liste des comptes"><Table heads={["Nom", "Email", "Rôle"]} rows={utilisateurs.map((u) => [u.nom, u.email, u.role?.nom ?? "-"])} /></Panel></>;
-    return <><PageTitle title="Paramètres" subtitle="Configuration globale de KOUECONSOLIDATED." /><Panel title="Paramètres"><Table heads={["Clé", "Valeur", "Description"]} rows={parametres.map((p) => [p.cle, p.valeur, p.description])} /></Panel></>;
+
+    if (route === "activites") {
+      return <>
+        <PageTitle title="Activités" subtitle="Créez tout nouveau business sans modifier le schéma." />
+        <Grid>
+          <Panel title="Nouvelle activité">
+            <form className="form compact" onSubmit={submitActivite}>
+              <Select name="type_activite_id" label="Type" items={refs.types_activites} />
+              <Select name="gerant_utilisateur_id" label="Gérant assigné" items={refs.utilisateurs} optional />
+              <input name="code" placeholder="Code" required />
+              <input name="nom" placeholder="Nom de l’activité" required />
+              <input name="montant_versement" type="number" placeholder="Versement attendu" defaultValue={0} />
+              <input name="date_demarrage" type="date" defaultValue={new Date().toISOString().slice(0, 10)} />
+              <select name="statut" defaultValue="actif"><option value="actif">Actif</option><option value="en_pause">En pause</option><option value="cede">Cédé</option><option value="cloture">Clôturé</option></select>
+              <textarea name="attributs" placeholder='Attributs JSON, ex. {"plaque":"1234CI","marque":"Yamaha"}' />
+              <button className="btn primary">Enregistrer</button>
+            </form>
+          </Panel>
+          <Panel title="Liste">
+            <Table heads={["Code", "Nom", "Type", "Gérant", "Versement", "Statut"]} rows={activites.map((a) => [a.code, a.nom, a.type_activite?.nom ?? "-", a.gerant?.nom ?? "-", money(a.montant_versement), pill(a.statut)])} />
+          </Panel>
+        </Grid>
+      </>;
+    }
+
+    if (route === "versements") {
+      return <>
+        <PageTitle title="Versements" subtitle="Générez les échéances et saisissez les paiements." action={<button className="btn gold" onClick={genererEcheances}>Générer la semaine</button>} />
+        <Grid>
+          <Panel title="Nouveau versement">
+            <form className="form compact" onSubmit={(e) => submitTransaction(e, "revenu")}>
+              <Select name="activite_id" label="Activité" items={refs.activites} />
+              <Select name="categorie_id" label="Catégorie" items={refs.categories_transactions.filter((c) => c.nature === "revenu")} />
+              <Select name="echeance_id" label="Échéance liée" items={echeances.map((e) => ({ id: e.id, nom: `${e.activite?.code ?? "Activité"} · ${date(e.debut_periode)}` }))} optional />
+              <input name="montant" type="number" placeholder="Montant" required />
+              <input name="date_transaction" type="date" defaultValue={new Date().toISOString().slice(0, 10)} />
+              <PaymentSelect />
+              <input name="justificatif" type="file" accept=".jpg,.jpeg,.png,.pdf" />
+              <textarea name="note" placeholder="Note ou référence du reçu" />
+              <button className="btn primary">Enregistrer</button>
+            </form>
+          </Panel>
+          <Panel title="Échéances">
+            <Table heads={["Activité", "Période", "Attendu", "Payé", "Statut"]} rows={echeances.map((e) => [e.activite?.nom ?? "-", `${date(e.debut_periode)} - ${date(e.fin_periode)}`, money(e.montant_attendu), money(e.montant_paye), pill(e.statut)])} />
+          </Panel>
+        </Grid>
+      </>;
+    }
+
+    if (route === "depenses") {
+      return <>
+        <PageTitle title="Dépenses" subtitle="Décaissements, carburant, réparations, aliments, salaires." />
+        <Grid>
+          <Panel title="Nouvelle dépense">
+            <form className="form compact" onSubmit={(e) => submitTransaction(e, "decaissement")}>
+              <Select name="activite_id" label="Activité" items={refs.activites} />
+              <Select name="categorie_id" label="Catégorie" items={refs.categories_transactions.filter((c) => c.nature === "decaissement")} />
+              <input name="montant" type="number" placeholder="Montant" required />
+              <input name="date_transaction" type="date" defaultValue={new Date().toISOString().slice(0, 10)} />
+              <PaymentSelect />
+              <input name="justificatif" type="file" accept=".jpg,.jpeg,.png,.pdf" />
+              <textarea name="note" placeholder="Motif, fournisseur ou commentaire" />
+              <button className="btn primary">Enregistrer</button>
+            </form>
+          </Panel>
+          <Panel title="Historique et validation">
+            <Table heads={["Date", "Activité", "Catégorie", "Montant", "Statut", "Actions"]} rows={transactions.map((t) => [date(t.date_transaction), t.activite?.nom ?? "-", t.categorie?.nom ?? "-", money(t.montant), pill(t.statut_validation ?? "valide"), t.statut_validation === "en_attente" ? <ActionGroup key={t.id}><button onClick={() => void validerTransaction(t.id, "valide")}>Valider</button><button onClick={() => void validerTransaction(t.id, "rejete")}>Rejeter</button></ActionGroup> : t.mode_paiement])} />
+          </Panel>
+        </Grid>
+      </>;
+    }
+
+    if (route === "inventaire") {
+      return <>
+        <PageTitle title="Inventaire" subtitle="Biens durables, stocks consommables, cheptel et mouvements tracés." />
+        <Grid>
+          <Panel title="Nouvel article">
+            <form className="form compact" onSubmit={submitArticle}>
+              <Select name="activite_id" label="Activité" items={refs.activites} />
+              <input name="nom" placeholder="Nom" required />
+              <select name="type_article"><option value="bien_durable">Bien durable</option><option value="stock_consommable">Stock consommable</option><option value="cheptel">Cheptel</option></select>
+              <input name="quantite" type="number" placeholder="Quantité" defaultValue={1} />
+              <input name="unite" placeholder="Unité" defaultValue="unite" />
+              <input name="valeur_unitaire" type="number" placeholder="Valeur unitaire" defaultValue={0} />
+              <input name="seuil_alerte" type="number" placeholder="Seuil d’alerte" />
+              <button className="btn primary">Enregistrer</button>
+            </form>
+          </Panel>
+          <Panel title="Mouvement de stock">
+            <form className="form compact" onSubmit={submitMouvementArticle}>
+              <Select name="article_id" label="Article" items={articles} />
+              <select name="type_mouvement"><option value="entree">Entrée</option><option value="sortie">Sortie</option><option value="ajustement">Ajustement</option></select>
+              <input name="quantite" type="number" step="0.01" placeholder="Quantité" required />
+              <input name="motif" placeholder="Motif" required />
+              <input name="date_mouvement" type="date" defaultValue={new Date().toISOString().slice(0, 10)} />
+              <button className="btn primary">Enregistrer</button>
+            </form>
+          </Panel>
+        </Grid>
+        <Panel title="Articles">
+          <Table heads={["Activité", "Article", "Type", "Quantité", "Seuil", "Valeur"]} rows={articles.map((a) => [a.activite?.nom ?? "-", a.nom, pill(a.type_article), `${a.quantite} ${a.unite}`, a.seuil_alerte ?? "-", money(Number(a.quantite) * Number(a.valeur_unitaire))])} />
+        </Panel>
+      </>;
+    }
+
+    if (route === "rapports") {
+      return <>
+        <PageTitle title="Rapports" subtitle="Bilan consolidé par activité sur une période." action={<button className="btn gold" onClick={() => void figerRapport()}>Figer le rapport</button>} />
+        <form className="filter-row" onSubmit={filtrerRapport}>
+          <input name="debut" type="date" defaultValue={rapport?.periode?.debut ?? new Date().toISOString().slice(0, 10)} />
+          <input name="fin" type="date" defaultValue={rapport?.periode?.fin ?? new Date().toISOString().slice(0, 10)} />
+          <button className="btn primary">Filtrer</button>
+        </form>
+        <div className="cards">
+          <Card label="Revenus" value={money(rapport?.totaux?.revenus)} />
+          <Card label="Dépenses" value={money(rapport?.totaux?.decaissements)} />
+          <Card label="Résultat" value={money(rapport?.totaux?.resultat)} />
+        </div>
+        <Panel title="Détail par activité">
+          <Table heads={["Code", "Activité", "Type", "Revenus", "Dépenses", "Résultat"]} rows={(rapport?.activites ?? []).map((a) => [a.code, a.nom, a.type_activite ?? "-", money(a.revenus), money(a.decaissements), money(a.resultat)])} />
+        </Panel>
+      </>;
+    }
+
+    if (route === "types-activites") {
+      return <>
+        <PageTitle title="Types d'activités" subtitle="Configurez les futurs business sans modifier le code." />
+        <Grid>
+          <Panel title="Nouveau type">
+            <form className="form compact" onSubmit={submitTypeActivite}>
+              <input name="nom" placeholder="Nom du type" required />
+              <input name="slug" placeholder="Slug optionnel" />
+              <select name="frequence_versement" defaultValue="aucun"><option value="aucun">Aucun versement</option><option value="journalier">Journalier</option><option value="hebdomadaire">Hebdomadaire</option><option value="mensuel">Mensuel</option></select>
+              <label className="check-row"><input name="a_versement_recurrent" type="checkbox" /> Versement récurrent</label>
+              <input name="icone" placeholder="Icône ou code visuel" />
+              <input name="couleur" placeholder="Couleur, ex. #0757a6" />
+              <textarea name="schema_champs" placeholder={"Champs dynamiques, un par ligne\nplaque:texte\nnombre_tetes:nombre"} />
+              <button className="btn primary">Enregistrer</button>
+            </form>
+          </Panel>
+          <Panel title="Types configurés">
+            <Table heads={["Type", "Fréquence", "Versement", "Activités", "Statut"]} rows={typesActivites.map((t) => [t.nom, t.frequence_versement, t.a_versement_recurrent ? "Oui" : "Non", t.activites_count ?? 0, pill(t.actif ? "actif" : "inactif")])} />
+          </Panel>
+        </Grid>
+      </>;
+    }
+
+    if (route === "utilisateurs") {
+      return <>
+        <PageTitle title="Utilisateurs" subtitle="Comptes web et mobile avec rôles opérationnels." />
+        <Grid>
+          <Panel title="Nouvel utilisateur">
+            <form className="form compact" onSubmit={submitUtilisateur}>
+              <Select name="role_id" label="Rôle" items={refs.roles} />
+              <input name="nom" placeholder="Nom complet" required />
+              <input name="email" type="email" placeholder="Email" required />
+              <input name="mot_de_passe" type="password" placeholder="Mot de passe" required />
+              <input name="telephone" placeholder="Téléphone" />
+              <select name="statut" defaultValue="actif"><option value="actif">Actif</option><option value="suspendu">Suspendu</option><option value="desactive">Désactivé</option></select>
+              <button className="btn primary">Enregistrer</button>
+            </form>
+          </Panel>
+          <Panel title="Liste des comptes">
+            <Table heads={["Nom", "Email", "Rôle", "Téléphone", "Statut"]} rows={utilisateurs.map((u) => [u.nom, u.email, u.role?.nom ?? "-", u.telephone ?? "-", pill(u.statut ?? "actif")])} />
+          </Panel>
+        </Grid>
+      </>;
+    }
+
+    if (route === "notifications") {
+      return <>
+        <PageTitle title="Notifications" subtitle="Alertes de retard, stock et rapports." />
+        <Panel title="Centre d'alertes">
+          <Table heads={["Type", "Titre", "Message", "Statut", "Action"]} rows={notifications.map((n) => [pill(n.type_notification), n.titre, n.message, n.lu ? "Lue" : pill("en_attente"), n.lu ? "-" : <button className="btn mini" key={n.id} onClick={() => void marquerNotificationLue(n.id)}>Marquer lue</button>])} />
+        </Panel>
+      </>;
+    }
+
+    if (route === "audit") {
+      return <>
+        <PageTitle title="Journal d'audit" subtitle="Traçabilité des actions sensibles." />
+        <Panel title="Dernières actions">
+          <Table heads={["Date", "Utilisateur", "Action", "Entité", "IP"]} rows={auditLogs.map((log) => [log.created_at ? date(log.created_at) : "-", log.utilisateur?.nom ?? "-", log.action, `${log.entite}${log.entite_id ? ` #${log.entite_id}` : ""}`, log.adresse_ip ?? "-"])} />
+        </Panel>
+      </>;
+    }
+
+    return <>
+      <PageTitle title="Paramètres" subtitle="Configuration globale de KOUECONSOLIDATED." />
+      <Panel title="Paramètres">
+        <form className="settings-form" onSubmit={submitParametres}>
+          {parametres.map((p) => (
+            <div className="settings-row" key={p.cle}>
+              <strong>{p.cle}</strong>
+              <input name={`valeur:${p.cle}`} defaultValue={p.valeur ?? ""} />
+              <input name={`description:${p.cle}`} defaultValue={p.description ?? ""} />
+            </div>
+          ))}
+          <button className="btn primary">Enregistrer les paramètres</button>
+        </form>
+      </Panel>
+    </>;
   }
 }
 
@@ -345,12 +649,16 @@ function Grid({ children }: { children: ReactNode }) {
   return <div className="grid-2">{children}</div>;
 }
 
+function ActionGroup({ children }: { children: ReactNode }) {
+  return <span className="action-group">{children}</span>;
+}
+
 function Table({ heads, rows }: { heads: string[]; rows: ReactNode[][] }) {
   return <div className="table-wrap"><table><thead><tr>{heads.map((h) => <th key={h}>{h}</th>)}</tr></thead><tbody>{rows.length ? rows.map((row, i) => <tr key={i}>{row.map((cell, j) => <td key={j}>{cell}</td>)}</tr>) : <tr><td colSpan={heads.length}>Aucune donnée.</td></tr>}</tbody></table></div>;
 }
 
-function Select({ name, label, items }: { name: string; label: string; items: Named[] }) {
-  return <select name={name} aria-label={label} required><option value="">{label}</option>{items.map((item) => <option value={item.id} key={item.id}>{item.nom}</option>)}</select>;
+function Select({ name, label, items, optional = false }: { name: string; label: string; items: Named[]; optional?: boolean }) {
+  return <select name={name} aria-label={label} required={!optional}><option value="">{label}</option>{items.map((item) => <option value={item.id} key={item.id}>{item.nom}</option>)}</select>;
 }
 
 function PaymentSelect() {
@@ -370,3 +678,28 @@ function date(value: string) {
   return new Intl.DateTimeFormat("fr-FR").format(new Date(value));
 }
 
+function parseJsonObject(value: unknown) {
+  const texte = String(value ?? "").trim();
+  if (!texte) return {};
+
+  try {
+    const parsed = JSON.parse(texte);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function parseSchema(value: string) {
+  return Object.fromEntries(
+    value
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const [cle, type = "texte"] = line.split(":").map((part) => part.trim());
+        return [cle, type];
+      })
+      .filter(([cle]) => Boolean(cle)),
+  );
+}

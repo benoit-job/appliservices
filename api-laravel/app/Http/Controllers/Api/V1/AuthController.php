@@ -13,18 +13,22 @@ class AuthController extends ApiController
     public function connexion(Request $request): JsonResponse
     {
         $donnees = $request->validate([
-            'email' => ['required', 'email'],
+            'identifiant' => ['required', 'string'],
             'mot_de_passe' => ['required', 'string'],
             'nom_appareil' => ['nullable', 'string', 'max:120'],
         ]);
 
-        $utilisateur = User::with('role')->where('email', $donnees['email'])
+        $utilisateur = User::with('role')
+            ->where(function ($query) use ($donnees) {
+                $query->where('email', $donnees['identifiant'])
+                      ->orWhere('nom', $donnees['identifiant']);
+            })
             ->where('statut', 'actif')
             ->first();
 
         if (!$utilisateur || !Hash::check($donnees['mot_de_passe'], $utilisateur->mot_de_passe)) {
             throw ValidationException::withMessages([
-                'email' => ['Identifiants incorrects.'],
+                'identifiant' => ['Identifiants incorrects.'],
             ]);
         }
 

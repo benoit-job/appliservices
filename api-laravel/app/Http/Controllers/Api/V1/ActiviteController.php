@@ -9,13 +9,18 @@ use Illuminate\Validation\Rule;
 
 class ActiviteController extends ApiController
 {
-    public function index(): JsonResponse
+    public function index(Request $request): JsonResponse
     {
+        $query = Activite::with(['typeActivite:id,nom,couleur,icone', 'gerant:id,nom,email'])
+            ->withCount(['transactions', 'articlesInventaire'])
+            ->latest();
+
+        if ($request->has('plateforme_id')) {
+            $query->where('plateforme_id', $request->input('plateforme_id'));
+        }
+
         return $this->ok([
-            'donnees' => Activite::with(['typeActivite:id,nom,couleur,icone', 'gerant:id,nom,email'])
-                ->withCount(['transactions', 'articlesInventaire'])
-                ->latest()
-                ->get(),
+            'donnees' => $query->get(),
         ]);
     }
 

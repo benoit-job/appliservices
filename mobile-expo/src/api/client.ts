@@ -17,7 +17,7 @@ export async function clearToken() {
 }
 
 export async function login(email: string, mot_de_passe: string) {
-  return api<{ jeton: string; utilisateur: { nom: string; email: string } }>("connexion", {
+  return api<{ jeton: string; utilisateur: { id: number; nom: string; email: string } }>("connexion", {
     method: "POST",
     body: JSON.stringify({ email, mot_de_passe, nom_appareil: "mobile-expo" }),
     skipAuth: true,

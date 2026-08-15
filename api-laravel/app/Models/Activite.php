@@ -6,14 +6,16 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use App\Models\Traits\Multitenant;
 
 class Activite extends Model
 {
-    use SoftDeletes;
+    use SoftDeletes, Multitenant;
 
     protected $table = 'activites';
 
     protected $fillable = [
+        'plateforme_id',
         'type_activite_id',
         'nom',
         'code',
@@ -33,6 +35,11 @@ class Activite extends Model
     public function typeActivite(): BelongsTo
     {
         return $this->belongsTo(TypeActivite::class);
+    }
+
+    public function plateforme(): BelongsTo
+    {
+        return $this->belongsTo(Plateforme::class);
     }
 
     public function gerant(): BelongsTo

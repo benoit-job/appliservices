@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Models\Activite;
 use App\Models\CategorieTransaction;
+use App\Models\Role;
 use App\Models\TypeActivite;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
@@ -17,6 +18,7 @@ class ReferenceController extends ApiController
             'categories_transactions' => CategorieTransaction::where('actif', true)->orderBy('nature')->orderBy('nom')->get(),
             'activites' => Activite::select('id', 'type_activite_id', 'nom', 'code', 'montant_versement')->orderBy('nom')->get(),
             'utilisateurs' => User::select('id', 'role_id', 'nom', 'email', 'telephone', 'statut')->where('statut', 'actif')->orderBy('nom')->get(),
+            'roles' => Role::select('id', 'nom', 'slug')->orderBy('nom')->get(),
         ]);
     }
 }

@@ -7,6 +7,7 @@ use App\Models\ArticleInventaire;
 use App\Models\CategorieTransaction;
 use App\Models\EcheanceVersement;
 use App\Models\Parametre;
+use App\Models\Plateforme;
 use App\Models\Role;
 use App\Models\TypeActivite;
 use App\Models\User;
@@ -23,16 +24,47 @@ class KoueManagerSeeder extends Seeder
             ['id' => 2, 'nom' => 'Gestionnaire', 'slug' => 'gestionnaire', 'description' => 'Gestion quotidienne et validation'],
             ['id' => 3, 'nom' => 'Gérant d’activité', 'slug' => 'gerant', 'description' => 'Saisie limitée aux activités assignées'],
             ['id' => 4, 'nom' => 'Comptable / Auditeur', 'slug' => 'auditeur', 'description' => 'Lecture des données financières'],
+            ['id' => 5, 'nom' => 'Super-admin plateformes', 'slug' => 'super-admin-plateformes', 'description' => 'Gestion des plateformes KOUECONSOLIDATED'],
         ];
 
         foreach ($roles as $role) {
             Role::updateOrCreate(['id' => $role['id']], $role);
         }
 
+        $plateforme = Plateforme::updateOrCreate(
+            ['id' => 1],
+            [
+                'nom' => 'KOUE MANAGER',
+                'slug' => 'koue-manager',
+                'email_contact' => 'admin@kouemanager.local',
+                'telephone_contact' => '+2250000000000',
+                'adresse' => 'Abidjan',
+                'statut' => 'actif',
+                'limite_utilisateurs' => 25,
+                'limite_activites' => 100,
+                'options' => ['devise' => 'FCFA'],
+            ]
+        );
+
+        User::updateOrCreate(
+            ['email' => 'plateformes@kouemanager.local'],
+            [
+                'plateforme_id' => null,
+                'role_id' => 5,
+                'est_compte_entreprise' => true,
+                'nom' => 'KOUECONSOLIDATED',
+                'mot_de_passe' => Hash::make('Knb0171ent'),
+                'telephone' => '+2250000000000',
+                'statut' => 'actif',
+            ]
+        );
+
         User::updateOrCreate(
             ['email' => 'admin@kouemanager.local'],
             [
+                'plateforme_id' => $plateforme->id,
                 'role_id' => 1,
+                'est_compte_entreprise' => false,
                 'nom' => 'Administrateur KOUE',
                 'mot_de_passe' => Hash::make('Admin@1234'),
                 'telephone' => '+2250000000000',
@@ -48,6 +80,7 @@ class KoueManagerSeeder extends Seeder
 
         foreach ($types as [$id, $nom, $slug, $versement, $frequence, $schema, $icone, $couleur]) {
             TypeActivite::updateOrCreate(['id' => $id], [
+                'plateforme_id' => $plateforme->id,
                 'nom' => $nom,
                 'slug' => $slug,
                 'a_versement_recurrent' => $versement,
@@ -71,6 +104,7 @@ class KoueManagerSeeder extends Seeder
 
         foreach ($categories as [$id, $typeId, $nom, $nature]) {
             CategorieTransaction::updateOrCreate(['id' => $id], [
+                'plateforme_id' => $plateforme->id,
                 'type_activite_id' => $typeId,
                 'nom' => $nom,
                 'nature' => $nature,
@@ -87,6 +121,7 @@ class KoueManagerSeeder extends Seeder
 
         foreach ($activites as [$id, $typeId, $nom, $code, $attributs, $montant]) {
             Activite::updateOrCreate(['id' => $id], [
+                'plateforme_id' => $plateforme->id,
                 'type_activite_id' => $typeId,
                 'nom' => $nom,
                 'code' => $code,

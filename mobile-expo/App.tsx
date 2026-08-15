@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { ComponentProps, useEffect, useRef, useState } from "react";
 import {
   Alert,
   Animated,
@@ -16,13 +16,19 @@ import { ChartGrid } from "./src/components/ChartPanel";
 import { enqueueOperation, flushQueue, getQueue } from "./src/storage/offlineQueue";
 import { ChartFilters, defaultChartFilters, filtersToQuery, Graphique } from "./src/types/charts";
 
-type User = { id?: number; nom: string; email: string; role?: { nom: string } };
+type Role = { id: number; nom: string; slug?: string };
+type User = { id: number; role_id?: number; nom: string; email: string; telephone?: string; statut?: string; role?: { nom: string } };
 type Reference = { id: number; nom: string; code?: string; nature?: string };
 type Resume = { activites: number; revenus: number; decaissements: number; resultat: number; retards: number; inventaire: number };
-type Activite = { id: number; nom: string; code: string; statut: string; montant_versement: string | number; type_activite?: { nom: string } };
-type Transaction = { id: number; type: "revenu" | "decaissement"; montant: string | number; date_transaction: string; mode_paiement: string; activite?: { nom: string; code: string }; categorie?: { nom: string } };
+type TypeActivite = { id: number; nom: string; slug?: string; frequence_versement: string; a_versement_recurrent: boolean; actif: boolean; activites_count?: number };
+type Activite = { id: number; type_activite_id?: number; nom: string; code: string; statut: string; montant_versement: string | number; type_activite?: { nom: string }; gerant?: { nom: string; email: string } };
+type Transaction = { id: number; type: "revenu" | "decaissement"; montant: string | number; date_transaction: string; mode_paiement: string; statut_validation?: string; activite?: { nom: string; code: string }; categorie?: { nom: string } };
 type Echeance = { id: number; statut: string; debut_periode?: string; fin_periode?: string; montant_attendu: string | number; montant_paye: string | number; activite?: { code: string; nom: string } };
-type Article = { id: number; nom: string; type_article: string; quantite: string | number; unite: string; valeur_unitaire: string | number; activite?: { nom: string; code: string } };
+type Article = { id: number; nom: string; type_article: string; quantite: string | number; unite: string; valeur_unitaire: string | number; seuil_alerte?: string | number | null; activite?: { nom: string; code: string } };
+type NotificationItem = { id: number; titre: string; message: string; type_notification: string; lu: boolean };
+type AuditLog = { id: number; action: string; entite: string; entite_id?: number; created_at?: string; utilisateur?: { nom: string; email: string } };
+type RapportActivite = { id: number; code: string; nom: string; type_activite?: string; revenus: number; decaissements: number; resultat: number };
+type Rapport = { periode?: { debut: string; fin: string }; totaux?: { revenus: number; decaissements: number; resultat: number }; activites?: RapportActivite[] };
 type Parametre = { cle: string; valeur: string; description?: string };
 type Dashboard = { resume?: Resume; activites?: Activite[]; transactions?: Transaction[]; echeances?: Echeance[]; graphiques?: Graphique[] };
 
@@ -34,12 +40,49 @@ const routes = [
   ["depenses", "Depenses"],
   ["inventaire", "Inventaire"],
   ["rapports", "Rapports"],
+  ["types-activites", "Types d'activites"],
   ["utilisateurs", "Utilisateurs"],
+  ["notifications", "Notifications"],
+  ["audit", "Audit"],
   ["parametres", "Parametres"],
 ] as const;
 
 type RouteKey = (typeof routes)[number][0];
 const linear = (value: number) => value;
+const today = () => new Date().toISOString().slice(0, 10);
+const statusOptions = [
+  { id: "actif", nom: "Actif" },
+  { id: "en_pause", nom: "En pause" },
+  { id: "cede", nom: "Cede" },
+  { id: "cloture", nom: "Cloture" },
+];
+const userStatusOptions = [
+  { id: "actif", nom: "Actif" },
+  { id: "suspendu", nom: "Suspendu" },
+  { id: "desactive", nom: "Desactive" },
+];
+const articleTypeOptions = [
+  { id: "bien_durable", nom: "Bien durable" },
+  { id: "stock_consommable", nom: "Stock" },
+  { id: "cheptel", nom: "Cheptel" },
+];
+const movementTypeOptions = [
+  { id: "entree", nom: "Entree" },
+  { id: "sortie", nom: "Sortie" },
+  { id: "ajustement", nom: "Ajustement" },
+];
+const frequencyOptions = [
+  { id: "aucun", nom: "Aucun" },
+  { id: "journalier", nom: "Journalier" },
+  { id: "hebdomadaire", nom: "Hebdo" },
+  { id: "mensuel", nom: "Mensuel" },
+];
+const paymentOptions = [
+  { id: "especes", nom: "Especes" },
+  { id: "mobile_money", nom: "Mobile Money" },
+  { id: "banque", nom: "Banque" },
+  { id: "autre", nom: "Autre" },
+];
 
 export default function App() {
   const [ready, setReady] = useState(false);
@@ -55,17 +98,77 @@ export default function App() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [echeances, setEcheances] = useState<Echeance[]>([]);
   const [articles, setArticles] = useState<Article[]>([]);
-  const [rapport, setRapport] = useState<any>(null);
+  const [rapport, setRapport] = useState<Rapport | null>(null);
   const [utilisateurs, setUtilisateurs] = useState<User[]>([]);
+  const [typesActivites, setTypesActivites] = useState<TypeActivite[]>([]);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [parametres, setParametres] = useState<Parametre[]>([]);
   const [references, setReferences] = useState<{
     activites: Reference[];
     categories_transactions: Reference[];
-  }>({ activites: [], categories_transactions: [] });
+    types_activites: TypeActivite[];
+    utilisateurs: User[];
+    roles: Role[];
+  }>({ activites: [], categories_transactions: [], types_activites: [], utilisateurs: [], roles: [] });
   const [offlineCount, setOfflineCount] = useState(0);
   const [email, setEmail] = useState("admin@kouemanager.local");
   const [password, setPassword] = useState("Admin@1234");
   const [montant, setMontant] = useState("");
+  const [activiteDraft, setActiviteDraft] = useState({
+    type_activite_id: "",
+    gerant_utilisateur_id: "",
+    code: "",
+    nom: "",
+    montant_versement: "0",
+    date_demarrage: today(),
+    statut: "actif",
+    attributs: "",
+  });
+  const [transactionDraft, setTransactionDraft] = useState({
+    activite_id: "",
+    categorie_id: "",
+    echeance_id: "",
+    montant: "",
+    date_transaction: today(),
+    mode_paiement: "especes",
+    note: "",
+  });
+  const [articleDraft, setArticleDraft] = useState({
+    activite_id: "",
+    nom: "",
+    type_article: "bien_durable",
+    quantite: "1",
+    unite: "unite",
+    valeur_unitaire: "0",
+    seuil_alerte: "",
+  });
+  const [mouvementDraft, setMouvementDraft] = useState({
+    article_id: "",
+    type_mouvement: "entree",
+    quantite: "",
+    motif: "",
+    date_mouvement: today(),
+  });
+  const [rapportDraft, setRapportDraft] = useState({ debut: today(), fin: today() });
+  const [typeDraft, setTypeDraft] = useState({
+    nom: "",
+    slug: "",
+    frequence_versement: "aucun",
+    a_versement_recurrent: false,
+    icone: "",
+    couleur: "",
+    schema_champs: "",
+  });
+  const [userDraft, setUserDraft] = useState({
+    role_id: "",
+    nom: "",
+    email: "",
+    mot_de_passe: "",
+    telephone: "",
+    statut: "actif",
+  });
+  const [paramDrafts, setParamDrafts] = useState<Record<string, string>>({});
 
   useEffect(() => {
     void bootstrap();
@@ -102,12 +205,21 @@ export default function App() {
     try {
       const [home, refs] = await Promise.all([
         api<Dashboard>("tableau-bord"),
-        api<{ activites: Reference[]; categories_transactions: Reference[] }>("references"),
+        api<{
+          activites: Reference[];
+          categories_transactions: Reference[];
+          types_activites: TypeActivite[];
+          utilisateurs: User[];
+          roles: Role[];
+        }>("references"),
       ]);
       setDashboard(home);
       setReferences({
         activites: refs.activites ?? [],
         categories_transactions: refs.categories_transactions ?? [],
+        types_activites: refs.types_activites ?? [],
+        utilisateurs: refs.utilisateurs ?? [],
+        roles: refs.roles ?? [],
       });
     } finally {
       setRefreshing(false);
@@ -128,9 +240,16 @@ export default function App() {
       if (nextRoute === "versements") setEcheances((await api<{ donnees: { data: Echeance[] } }>("echeances-versements")).donnees.data);
       if (nextRoute === "depenses") setTransactions((await api<{ donnees: { data: Transaction[] } }>("transactions?type=decaissement")).donnees.data);
       if (nextRoute === "inventaire") setArticles((await api<{ donnees: { data: Article[] } }>("inventaire")).donnees.data);
-      if (nextRoute === "rapports") setRapport((await api<{ donnees: any }>("rapports/bilan")).donnees);
+      if (nextRoute === "rapports") setRapport((await api<{ donnees: Rapport }>("rapports/bilan")).donnees);
+      if (nextRoute === "types-activites") setTypesActivites((await api<{ donnees: TypeActivite[] }>("types-activites")).donnees);
       if (nextRoute === "utilisateurs") setUtilisateurs((await api<{ donnees: User[] }>("utilisateurs")).donnees);
-      if (nextRoute === "parametres") setParametres((await api<{ donnees: Parametre[] }>("parametres")).donnees);
+      if (nextRoute === "notifications") setNotifications((await api<{ donnees: NotificationItem[] }>("notifications")).donnees);
+      if (nextRoute === "audit") setAuditLogs((await api<{ donnees: { data: AuditLog[] } }>("audit")).donnees.data);
+      if (nextRoute === "parametres") {
+        const response = await api<{ donnees: Parametre[] }>("parametres");
+        setParametres(response.donnees);
+        setParamDrafts(Object.fromEntries(response.donnees.map((item) => [item.cle, item.valeur ?? ""])));
+      }
     } catch (error) {
       Alert.alert("Chargement impossible", error instanceof Error ? error.message : "Erreur inconnue");
     } finally {
@@ -139,9 +258,11 @@ export default function App() {
   }
 
   async function submitTransactionRapide(type: "revenu" | "decaissement") {
-    const activite = references.activites[0];
-    const categorie = references.categories_transactions.find((item) => item.nature === type);
-    if (!activite || !categorie || !montant) {
+    const activite = references.activites.find((item) => String(item.id) === transactionDraft.activite_id) ?? references.activites[0];
+    const categorie = references.categories_transactions.find((item) => String(item.id) === transactionDraft.categorie_id)
+      ?? references.categories_transactions.find((item) => item.nature === type);
+    const amount = transactionDraft.montant || montant;
+    if (!activite || !categorie || !amount) {
       Alert.alert("Information manquante", "Selectionnez un montant et verifiez les references.");
       return;
     }
@@ -150,14 +271,17 @@ export default function App() {
       activite_id: activite.id,
       categorie_id: categorie.id,
       type,
-      montant,
-      mode_paiement: "especes",
-      date_transaction: new Date().toISOString().slice(0, 10),
+      montant: amount,
+      echeance_id: transactionDraft.echeance_id || undefined,
+      mode_paiement: transactionDraft.mode_paiement,
+      date_transaction: transactionDraft.date_transaction,
+      note: transactionDraft.note || undefined,
     };
 
     try {
       await api("transactions", { method: "POST", body: JSON.stringify(payload) });
       setMontant("");
+      setTransactionDraft((draft) => ({ ...draft, montant: "", note: "" }));
       await loadData();
       await openRoute(type === "revenu" ? "versements" : "depenses");
     } catch {
@@ -165,6 +289,112 @@ export default function App() {
       setOfflineCount((await getQueue()).length);
       Alert.alert("Hors ligne", "L'operation est gardee localement et sera synchronisee plus tard.");
     }
+  }
+
+  async function submitActiviteMobile() {
+    if (!activiteDraft.type_activite_id || !activiteDraft.code || !activiteDraft.nom) {
+      Alert.alert("Information manquante", "Renseignez le type, le code et le nom.");
+      return;
+    }
+
+    await api("activites", {
+      method: "POST",
+      body: JSON.stringify({
+        ...activiteDraft,
+        gerant_utilisateur_id: activiteDraft.gerant_utilisateur_id || null,
+        attributs: parseJsonObject(activiteDraft.attributs),
+      }),
+    });
+    setActiviteDraft({ type_activite_id: "", gerant_utilisateur_id: "", code: "", nom: "", montant_versement: "0", date_demarrage: today(), statut: "actif", attributs: "" });
+    await loadData();
+    await openRoute("activites");
+  }
+
+  async function submitArticleMobile() {
+    if (!articleDraft.activite_id || !articleDraft.nom) {
+      Alert.alert("Information manquante", "Renseignez l'activite et le nom de l'article.");
+      return;
+    }
+
+    await api("inventaire", { method: "POST", body: JSON.stringify({ ...articleDraft, attributs: {} }) });
+    setArticleDraft({ activite_id: "", nom: "", type_article: "bien_durable", quantite: "1", unite: "unite", valeur_unitaire: "0", seuil_alerte: "" });
+    await openRoute("inventaire");
+  }
+
+  async function submitMouvementMobile() {
+    if (!mouvementDraft.article_id || !mouvementDraft.quantite || !mouvementDraft.motif) {
+      Alert.alert("Information manquante", "Selectionnez l'article, la quantite et le motif.");
+      return;
+    }
+
+    const { article_id, ...payload } = mouvementDraft;
+    await api(`inventaire/${article_id}/mouvements`, { method: "POST", body: JSON.stringify(payload) });
+    setMouvementDraft({ article_id: "", type_mouvement: "entree", quantite: "", motif: "", date_mouvement: today() });
+    await openRoute("inventaire");
+  }
+
+  async function filtrerRapportMobile() {
+    const query = new URLSearchParams(rapportDraft).toString();
+    setRapport((await api<{ donnees: Rapport }>(`rapports/bilan?${query}`)).donnees);
+  }
+
+  async function figerRapportMobile() {
+    const query = rapport?.periode ? new URLSearchParams(rapport.periode).toString() : new URLSearchParams(rapportDraft).toString();
+    await api(`rapports/figer?${query}`, { method: "POST", body: "{}" });
+    Alert.alert("Rapport fige", "Le rapport a ete archive.");
+  }
+
+  async function submitTypeActiviteMobile() {
+    if (!typeDraft.nom) {
+      Alert.alert("Information manquante", "Renseignez le nom du type.");
+      return;
+    }
+
+    await api("types-activites", {
+      method: "POST",
+      body: JSON.stringify({
+        ...typeDraft,
+        slug: typeDraft.slug || undefined,
+        actif: true,
+        schema_champs: parseSchema(typeDraft.schema_champs),
+      }),
+    });
+    setTypeDraft({ nom: "", slug: "", frequence_versement: "aucun", a_versement_recurrent: false, icone: "", couleur: "", schema_champs: "" });
+    await loadData();
+    await openRoute("types-activites");
+  }
+
+  async function submitUtilisateurMobile() {
+    if (!userDraft.role_id || !userDraft.nom || !userDraft.email || !userDraft.mot_de_passe) {
+      Alert.alert("Information manquante", "Renseignez le role, le nom, l'email et le mot de passe.");
+      return;
+    }
+
+    await api("utilisateurs", { method: "POST", body: JSON.stringify(userDraft) });
+    setUserDraft({ role_id: "", nom: "", email: "", mot_de_passe: "", telephone: "", statut: "actif" });
+    await loadData();
+    await openRoute("utilisateurs");
+  }
+
+  async function submitParametresMobile() {
+    const payload = parametres.map((parametre) => ({
+      cle: parametre.cle,
+      valeur: paramDrafts[parametre.cle] ?? parametre.valeur ?? "",
+      description: parametre.description ?? "",
+    }));
+    const response = await api<{ donnees: Parametre[] }>("parametres", { method: "PUT", body: JSON.stringify({ parametres: payload }) });
+    setParametres(response.donnees);
+    setParamDrafts(Object.fromEntries(response.donnees.map((item) => [item.cle, item.valeur ?? ""])));
+  }
+
+  async function marquerNotificationLue(notificationId: number) {
+    await api(`notifications/${notificationId}/lue`, { method: "PATCH", body: "{}" });
+    await openRoute("notifications");
+  }
+
+  async function validerTransactionMobile(transactionId: number, statut: "valide" | "rejete") {
+    await api(`transactions/${transactionId}/validation`, { method: "PATCH", body: JSON.stringify({ statut_validation: statut }) });
+    await openRoute("depenses");
   }
 
   async function appliquerFiltresGraphiques() {
@@ -323,10 +553,21 @@ export default function App() {
     if (route === "activites") {
       return (
         <>
-          <SectionTitle title="Activites" subtitle="Toutes les activites du groupe." />
+          <SectionTitle title="Activites" subtitle="Creez tout nouveau business sans modifier le schema." />
+          <FormCard title="Nouvelle activite">
+            <ChoiceGroup label="Type" items={references.types_activites} selected={activiteDraft.type_activite_id} onSelect={(value) => setActiviteDraft((draft) => ({ ...draft, type_activite_id: value }))} />
+            <ChoiceGroup label="Gerant assigne" items={references.utilisateurs} selected={activiteDraft.gerant_utilisateur_id} onSelect={(value) => setActiviteDraft((draft) => ({ ...draft, gerant_utilisateur_id: value }))} optional />
+            <Field label="Code" value={activiteDraft.code} onChangeText={(value) => setActiviteDraft((draft) => ({ ...draft, code: value }))} placeholder="MOTO-04" />
+            <Field label="Nom" value={activiteDraft.nom} onChangeText={(value) => setActiviteDraft((draft) => ({ ...draft, nom: value }))} placeholder="Nom de l'activite" />
+            <Field label="Versement attendu" value={activiteDraft.montant_versement} onChangeText={(value) => setActiviteDraft((draft) => ({ ...draft, montant_versement: value }))} keyboardType="numeric" />
+            <Field label="Date demarrage" value={activiteDraft.date_demarrage} onChangeText={(value) => setActiviteDraft((draft) => ({ ...draft, date_demarrage: value }))} placeholder="YYYY-MM-DD" />
+            <ChoiceGroup label="Statut" items={statusOptions} selected={activiteDraft.statut} onSelect={(value) => setActiviteDraft((draft) => ({ ...draft, statut: value }))} />
+            <Field label="Attributs JSON" value={activiteDraft.attributs} onChangeText={(value) => setActiviteDraft((draft) => ({ ...draft, attributs: value }))} placeholder='{"plaque":"1234CI"}' multiline />
+            <Pressable style={styles.primary} onPress={() => void submitActiviteMobile()}><Text style={styles.primaryText}>Enregistrer</Text></Pressable>
+          </FormCard>
           <ListCard title="Liste des activites" empty="Aucune activite.">
             {activites.map((item) => (
-              <DataRow key={item.id} title={item.nom} subtitle={`${item.code} - ${item.type_activite?.nom ?? "Type"}`} value={item.statut} />
+              <DataRow key={item.id} title={item.nom} subtitle={`${item.code} - ${item.type_activite?.nom ?? "Type"} - ${item.gerant?.nom ?? "Sans gerant"}`} value={item.statut} />
             ))}
           </ListCard>
         </>
@@ -337,7 +578,7 @@ export default function App() {
       return (
         <>
           <SectionTitle title="Versements" subtitle="Saisie rapide et suivi des paiements." />
-          <QuickAmountCard title="Nouveau versement" actionLabel="Enregistrer le versement" onSubmit={() => submitTransactionRapide("revenu")} />
+          <TransactionFormCard type="revenu" />
           <ListCard title="Echeances" empty="Aucune echeance.">
             {echeances.map((item) => (
               <DataRow key={item.id} title={item.activite?.nom ?? "-"} subtitle={`${money(item.montant_paye)} / ${money(item.montant_attendu)}`} value={item.statut} />
@@ -351,10 +592,23 @@ export default function App() {
       return (
         <>
           <SectionTitle title="Depenses" subtitle="Decaissements et historique." />
-          <QuickAmountCard title="Nouvelle depense" actionLabel="Enregistrer la depense" onSubmit={() => submitTransactionRapide("decaissement")} />
+          <TransactionFormCard type="decaissement" />
           <ListCard title="Historique" empty="Aucune depense.">
             {transactions.map((item) => (
-              <DataRow key={item.id} title={item.categorie?.nom ?? "Depense"} subtitle={`${date(item.date_transaction)} - ${item.activite?.nom ?? "-"}`} value={money(item.montant)} />
+              item.statut_validation === "en_attente" ? (
+                <ActionRow
+                  key={item.id}
+                  title={item.categorie?.nom ?? "Depense"}
+                  subtitle={`${date(item.date_transaction)} - ${item.activite?.nom ?? "-"} - ${money(item.montant)}`}
+                  value="en attente"
+                  actions={[
+                    ["Valider", () => void validerTransactionMobile(item.id, "valide")],
+                    ["Rejeter", () => void validerTransactionMobile(item.id, "rejete")],
+                  ]}
+                />
+              ) : (
+                <DataRow key={item.id} title={item.categorie?.nom ?? "Depense"} subtitle={`${date(item.date_transaction)} - ${item.activite?.nom ?? "-"} - ${item.mode_paiement}`} value={money(item.montant)} />
+              )
             ))}
           </ListCard>
         </>
@@ -364,10 +618,28 @@ export default function App() {
     if (route === "inventaire") {
       return (
         <>
-          <SectionTitle title="Inventaire" subtitle="Biens, stocks et cheptel." />
+          <SectionTitle title="Inventaire" subtitle="Biens, stocks, cheptel et mouvements traces." />
+          <FormCard title="Nouvel article">
+            <ChoiceGroup label="Activite" items={references.activites} selected={articleDraft.activite_id} onSelect={(value) => setArticleDraft((draft) => ({ ...draft, activite_id: value }))} />
+            <Field label="Nom" value={articleDraft.nom} onChangeText={(value) => setArticleDraft((draft) => ({ ...draft, nom: value }))} placeholder="Nom de l'article" />
+            <ChoiceGroup label="Type article" items={articleTypeOptions} selected={articleDraft.type_article} onSelect={(value) => setArticleDraft((draft) => ({ ...draft, type_article: value }))} />
+            <Field label="Quantite" value={articleDraft.quantite} onChangeText={(value) => setArticleDraft((draft) => ({ ...draft, quantite: value }))} keyboardType="numeric" />
+            <Field label="Unite" value={articleDraft.unite} onChangeText={(value) => setArticleDraft((draft) => ({ ...draft, unite: value }))} />
+            <Field label="Valeur unitaire" value={articleDraft.valeur_unitaire} onChangeText={(value) => setArticleDraft((draft) => ({ ...draft, valeur_unitaire: value }))} keyboardType="numeric" />
+            <Field label="Seuil d'alerte" value={articleDraft.seuil_alerte} onChangeText={(value) => setArticleDraft((draft) => ({ ...draft, seuil_alerte: value }))} keyboardType="numeric" />
+            <Pressable style={styles.primary} onPress={() => void submitArticleMobile()}><Text style={styles.primaryText}>Enregistrer</Text></Pressable>
+          </FormCard>
+          <FormCard title="Mouvement de stock">
+            <ChoiceGroup label="Article" items={articles} selected={mouvementDraft.article_id} onSelect={(value) => setMouvementDraft((draft) => ({ ...draft, article_id: value }))} />
+            <ChoiceGroup label="Type mouvement" items={movementTypeOptions} selected={mouvementDraft.type_mouvement} onSelect={(value) => setMouvementDraft((draft) => ({ ...draft, type_mouvement: value }))} />
+            <Field label="Quantite" value={mouvementDraft.quantite} onChangeText={(value) => setMouvementDraft((draft) => ({ ...draft, quantite: value }))} keyboardType="numeric" />
+            <Field label="Motif" value={mouvementDraft.motif} onChangeText={(value) => setMouvementDraft((draft) => ({ ...draft, motif: value }))} />
+            <Field label="Date mouvement" value={mouvementDraft.date_mouvement} onChangeText={(value) => setMouvementDraft((draft) => ({ ...draft, date_mouvement: value }))} placeholder="YYYY-MM-DD" />
+            <Pressable style={styles.primary} onPress={() => void submitMouvementMobile()}><Text style={styles.primaryText}>Enregistrer</Text></Pressable>
+          </FormCard>
           <ListCard title="Articles" empty="Aucun article.">
             {articles.map((item) => (
-              <DataRow key={item.id} title={item.nom} subtitle={`${item.quantite} ${item.unite} - ${item.type_article}`} value={money(Number(item.quantite) * Number(item.valeur_unitaire))} />
+              <DataRow key={item.id} title={item.nom} subtitle={`${item.activite?.nom ?? "-"} - ${item.quantite} ${item.unite} - seuil ${item.seuil_alerte ?? "-"}`} value={money(Number(item.quantite) * Number(item.valeur_unitaire))} />
             ))}
           </ListCard>
         </>
@@ -378,13 +650,21 @@ export default function App() {
       return (
         <>
           <SectionTitle title="Rapports" subtitle="Bilan consolide." />
+          <FormCard title="Filtre de periode">
+            <Field label="Debut" value={rapportDraft.debut} onChangeText={(value) => setRapportDraft((draft) => ({ ...draft, debut: value }))} placeholder="YYYY-MM-DD" />
+            <Field label="Fin" value={rapportDraft.fin} onChangeText={(value) => setRapportDraft((draft) => ({ ...draft, fin: value }))} placeholder="YYYY-MM-DD" />
+            <View style={styles.actionRowButtons}>
+              <Pressable style={[styles.primary, styles.actionButton]} onPress={() => void filtrerRapportMobile()}><Text style={styles.primaryText}>Filtrer</Text></Pressable>
+              <Pressable style={[styles.secondary, styles.actionButton]} onPress={() => void figerRapportMobile()}><Text style={styles.secondaryText}>Figer</Text></Pressable>
+            </View>
+          </FormCard>
           <View style={styles.stats}>
             <Stat label="Revenus" value={money(rapport?.totaux?.revenus)} />
             <Stat label="Depenses" value={money(rapport?.totaux?.decaissements)} />
             <Stat label="Resultat" value={money(rapport?.totaux?.resultat)} />
           </View>
           <ListCard title="Par activite" empty="Aucune donnee.">
-            {(rapport?.activites ?? []).map((item: any) => (
+            {(rapport?.activites ?? []).map((item) => (
               <DataRow key={item.id ?? item.code} title={item.nom} subtitle={item.type_activite ?? item.code} value={money(item.resultat)} />
             ))}
           </ListCard>
@@ -395,10 +675,85 @@ export default function App() {
     if (route === "utilisateurs") {
       return (
         <>
-          <SectionTitle title="Utilisateurs" subtitle="Comptes web et mobile." />
+          <SectionTitle title="Utilisateurs" subtitle="Comptes web et mobile avec roles." />
+          <FormCard title="Nouvel utilisateur">
+            <ChoiceGroup label="Role" items={references.roles} selected={userDraft.role_id} onSelect={(value) => setUserDraft((draft) => ({ ...draft, role_id: value }))} />
+            <Field label="Nom" value={userDraft.nom} onChangeText={(value) => setUserDraft((draft) => ({ ...draft, nom: value }))} />
+            <Field label="Email" value={userDraft.email} onChangeText={(value) => setUserDraft((draft) => ({ ...draft, email: value }))} autoCapitalize="none" keyboardType="email-address" />
+            <Field label="Mot de passe" value={userDraft.mot_de_passe} onChangeText={(value) => setUserDraft((draft) => ({ ...draft, mot_de_passe: value }))} secureTextEntry />
+            <Field label="Telephone" value={userDraft.telephone} onChangeText={(value) => setUserDraft((draft) => ({ ...draft, telephone: value }))} keyboardType="phone-pad" />
+            <ChoiceGroup label="Statut" items={userStatusOptions} selected={userDraft.statut} onSelect={(value) => setUserDraft((draft) => ({ ...draft, statut: value }))} />
+            <Pressable style={styles.primary} onPress={() => void submitUtilisateurMobile()}><Text style={styles.primaryText}>Enregistrer</Text></Pressable>
+          </FormCard>
           <ListCard title="Comptes" empty="Aucun utilisateur.">
             {utilisateurs.map((item) => (
-              <DataRow key={item.id ?? item.email} title={item.nom} subtitle={item.email} value={item.role?.nom ?? "Role"} />
+              <DataRow key={item.id ?? item.email} title={item.nom} subtitle={`${item.email} - ${item.telephone ?? "-"}`} value={item.role?.nom ?? "Role"} />
+            ))}
+          </ListCard>
+        </>
+      );
+    }
+
+    if (route === "types-activites") {
+      return (
+        <>
+          <SectionTitle title="Types d'activites" subtitle="Configuration des business." />
+          <FormCard title="Nouveau type">
+            <Field label="Nom" value={typeDraft.nom} onChangeText={(value) => setTypeDraft((draft) => ({ ...draft, nom: value }))} />
+            <Field label="Slug" value={typeDraft.slug} onChangeText={(value) => setTypeDraft((draft) => ({ ...draft, slug: value }))} />
+            <ChoiceGroup label="Frequence" items={frequencyOptions} selected={typeDraft.frequence_versement} onSelect={(value) => setTypeDraft((draft) => ({ ...draft, frequence_versement: value }))} />
+            <Pressable style={styles.checkRow} onPress={() => setTypeDraft((draft) => ({ ...draft, a_versement_recurrent: !draft.a_versement_recurrent }))}>
+              <View style={[styles.checkBox, typeDraft.a_versement_recurrent && styles.checkBoxActive]} />
+              <Text style={styles.checkText}>Versement recurrent</Text>
+            </Pressable>
+            <Field label="Icone" value={typeDraft.icone} onChangeText={(value) => setTypeDraft((draft) => ({ ...draft, icone: value }))} />
+            <Field label="Couleur" value={typeDraft.couleur} onChangeText={(value) => setTypeDraft((draft) => ({ ...draft, couleur: value }))} placeholder="#0757a6" />
+            <Field label="Champs dynamiques" value={typeDraft.schema_champs} onChangeText={(value) => setTypeDraft((draft) => ({ ...draft, schema_champs: value }))} placeholder={"plaque:texte\nnombre_tetes:nombre"} multiline />
+            <Pressable style={styles.primary} onPress={() => void submitTypeActiviteMobile()}><Text style={styles.primaryText}>Enregistrer</Text></Pressable>
+          </FormCard>
+          <ListCard title="Types configures" empty="Aucun type.">
+            {typesActivites.map((item) => (
+              <DataRow
+                key={item.id}
+                title={item.nom}
+                subtitle={`${item.frequence_versement} - ${item.a_versement_recurrent ? "versement recurrent" : "sans versement"}`}
+                value={item.actif ? `${item.activites_count ?? 0} act.` : "inactif"}
+              />
+            ))}
+          </ListCard>
+        </>
+      );
+    }
+
+    if (route === "notifications") {
+      return (
+        <>
+          <SectionTitle title="Notifications" subtitle="Alertes et rappels." />
+          <ListCard title="Centre d'alertes" empty="Aucune notification.">
+            {notifications.map((item) => (
+              item.lu ? (
+                <DataRow key={item.id} title={item.titre} subtitle={item.message} value="Lue" />
+              ) : (
+                <ActionRow key={item.id} title={item.titre} subtitle={item.message} value={item.type_notification} actions={[["Marquer lue", () => void marquerNotificationLue(item.id)]]} />
+              )
+            ))}
+          </ListCard>
+        </>
+      );
+    }
+
+    if (route === "audit") {
+      return (
+        <>
+          <SectionTitle title="Audit" subtitle="Actions sensibles tracees." />
+          <ListCard title="Dernieres actions" empty="Aucune action.">
+            {auditLogs.map((item) => (
+              <DataRow
+                key={item.id}
+                title={`${item.action} - ${item.entite}`}
+                subtitle={`${item.utilisateur?.nom ?? "Systeme"}${item.created_at ? ` - ${date(item.created_at)}` : ""}`}
+                value={item.entite_id ? `#${item.entite_id}` : "-"}
+              />
             ))}
           </ListCard>
         </>
@@ -408,12 +763,33 @@ export default function App() {
     return (
       <>
         <SectionTitle title="Parametres" subtitle="Configuration globale." />
-        <ListCard title="Parametres" empty="Aucun parametre.">
+        <FormCard title="Parametres">
           {parametres.map((item) => (
-            <DataRow key={item.cle} title={item.cle} subtitle={item.description ?? ""} value={item.valeur} />
+            <Field key={item.cle} label={item.cle} value={paramDrafts[item.cle] ?? item.valeur ?? ""} onChangeText={(value) => setParamDrafts((drafts) => ({ ...drafts, [item.cle]: value }))} placeholder={item.description ?? ""} />
           ))}
-        </ListCard>
+          <Pressable style={styles.primary} onPress={() => void submitParametresMobile()}><Text style={styles.primaryText}>Enregistrer les parametres</Text></Pressable>
+        </FormCard>
       </>
+    );
+  }
+
+  function TransactionFormCard({ type }: { type: "revenu" | "decaissement" }) {
+    const categories = references.categories_transactions.filter((item) => item.nature === type);
+    return (
+      <FormCard title={type === "revenu" ? "Nouveau versement" : "Nouvelle depense"}>
+        <ChoiceGroup label="Activite" items={references.activites} selected={transactionDraft.activite_id} onSelect={(value) => setTransactionDraft((draft) => ({ ...draft, activite_id: value }))} />
+        <ChoiceGroup label="Categorie" items={categories} selected={transactionDraft.categorie_id} onSelect={(value) => setTransactionDraft((draft) => ({ ...draft, categorie_id: value }))} />
+        {type === "revenu" && (
+          <ChoiceGroup label="Echeance liee" items={echeances.map((item) => ({ id: item.id, nom: `${item.activite?.code ?? "Activite"} - ${item.debut_periode ? date(item.debut_periode) : "periode"}` }))} selected={transactionDraft.echeance_id} onSelect={(value) => setTransactionDraft((draft) => ({ ...draft, echeance_id: value }))} optional />
+        )}
+        <Field label="Montant" value={transactionDraft.montant} onChangeText={(value) => setTransactionDraft((draft) => ({ ...draft, montant: value }))} keyboardType="numeric" />
+        <Field label="Date" value={transactionDraft.date_transaction} onChangeText={(value) => setTransactionDraft((draft) => ({ ...draft, date_transaction: value }))} placeholder="YYYY-MM-DD" />
+        <ChoiceGroup label="Paiement" items={paymentOptions} selected={transactionDraft.mode_paiement} onSelect={(value) => setTransactionDraft((draft) => ({ ...draft, mode_paiement: value }))} />
+        <Field label="Note / reference recu" value={transactionDraft.note} onChangeText={(value) => setTransactionDraft((draft) => ({ ...draft, note: value }))} multiline />
+        <Pressable style={styles.primary} onPress={() => void submitTransactionRapide(type)}>
+          <Text style={styles.primaryText}>{type === "revenu" ? "Enregistrer le versement" : "Enregistrer la depense"}</Text>
+        </Pressable>
+      </FormCard>
     );
   }
 
@@ -437,6 +813,68 @@ function Splash({ compact = false }: { compact?: boolean }) {
       <KoueSpinner compact={compact} />
       {!compact && <Text style={styles.brand}>KOUE MANAGER</Text>}
       {!compact && <Text style={styles.muted}>Chargement...</Text>}
+    </View>
+  );
+}
+
+function FormCard({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <View style={styles.card}>
+      <Text style={styles.title}>{title}</Text>
+      <View style={styles.formStack}>{children}</View>
+    </View>
+  );
+}
+
+function Field({ label, multiline = false, ...props }: { label: string } & ComponentProps<typeof TextInput>) {
+  return (
+    <View style={styles.field}>
+      <Text style={styles.inputLabel}>{label}</Text>
+      <TextInput
+        style={[styles.input, multiline && styles.inputMultiline]}
+        multiline={multiline}
+        textAlignVertical={multiline ? "top" : "center"}
+        placeholderTextColor="#8a97aa"
+        {...props}
+      />
+    </View>
+  );
+}
+
+function ChoiceGroup({
+  label,
+  items,
+  selected,
+  onSelect,
+  optional = false,
+}: {
+  label: string;
+  items: Array<{ id: string | number; nom: string; code?: string }>;
+  selected: string;
+  onSelect: (value: string) => void;
+  optional?: boolean;
+}) {
+  return (
+    <View style={styles.field}>
+      <Text style={styles.inputLabel}>{label}</Text>
+      <View style={styles.choiceWrap}>
+        {optional && (
+          <Pressable style={[styles.choiceChip, !selected && styles.choiceChipActive]} onPress={() => onSelect("")}>
+            <Text style={[styles.choiceText, !selected && styles.choiceTextActive]}>Aucun</Text>
+          </Pressable>
+        )}
+        {items.map((item) => {
+          const value = String(item.id);
+          const active = selected === value;
+          return (
+            <Pressable key={value} style={[styles.choiceChip, active && styles.choiceChipActive]} onPress={() => onSelect(value)}>
+              <Text style={[styles.choiceText, active && styles.choiceTextActive]} numberOfLines={1}>
+                {item.code ? `${item.code} - ${item.nom}` : item.nom}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
     </View>
   );
 }
@@ -531,6 +969,31 @@ function DataRow({ title, subtitle, value }: { title: string; subtitle: string; 
   );
 }
 
+function ActionRow({
+  title,
+  subtitle,
+  value,
+  actions,
+}: {
+  title: string;
+  subtitle: string;
+  value: string | number;
+  actions: Array<[string, () => void]>;
+}) {
+  return (
+    <View style={styles.actionRow}>
+      <DataRow title={title} subtitle={subtitle} value={value} />
+      <View style={styles.actionRowButtons}>
+        {actions.map(([label, action]) => (
+          <Pressable key={label} style={[styles.secondary, styles.actionButton]} onPress={action}>
+            <Text style={styles.secondaryText}>{label}</Text>
+          </Pressable>
+        ))}
+      </View>
+    </View>
+  );
+}
+
 function LogoutIcon() {
   return (
     <View style={styles.logoutIcon} pointerEvents="none">
@@ -551,6 +1014,31 @@ function money(value?: string | number) {
 
 function date(value: string) {
   return new Intl.DateTimeFormat("fr-FR").format(new Date(value));
+}
+
+function parseJsonObject(value: string) {
+  const text = value.trim();
+  if (!text) return {};
+  try {
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function parseSchema(value: string) {
+  return Object.fromEntries(
+    value
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const [key, type = "texte"] = line.split(":").map((part) => part.trim());
+        return [key, type];
+      })
+      .filter(([key]) => Boolean(key)),
+  );
 }
 
 const styles = StyleSheet.create({
@@ -769,11 +1257,46 @@ const styles = StyleSheet.create({
   pageTitle: { fontSize: 27, fontWeight: "900", color: "#162033" },
   card: { backgroundColor: "#fff", borderRadius: 8, padding: 16, gap: 12, borderWidth: 1, borderColor: "#dde5ef" },
   title: { fontSize: 18, fontWeight: "800", color: "#162033" },
-  input: { height: 46, borderWidth: 1, borderColor: "#dde5ef", borderRadius: 7, paddingHorizontal: 12, backgroundColor: "#fff" },
+  formStack: { gap: 12 },
+  field: { gap: 7 },
+  input: { minHeight: 46, borderWidth: 1, borderColor: "#dde5ef", borderRadius: 7, paddingHorizontal: 12, paddingVertical: 10, backgroundColor: "#fff", color: "#162033" },
+  inputMultiline: { minHeight: 92 },
+  choiceWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  choiceChip: {
+    maxWidth: "100%",
+    minHeight: 36,
+    justifyContent: "center",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#dde5ef",
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    backgroundColor: "#f8fafc",
+  },
+  choiceChipActive: { borderColor: "#0757a6", backgroundColor: "#0757a6" },
+  choiceText: { maxWidth: 220, color: "#42516a", fontSize: 12, fontWeight: "800" },
+  choiceTextActive: { color: "#fff" },
+  checkRow: {
+    minHeight: 46,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    borderWidth: 1,
+    borderColor: "#dde5ef",
+    borderRadius: 7,
+    paddingHorizontal: 12,
+    backgroundColor: "#f8fafc",
+  },
+  checkBox: { width: 18, height: 18, borderRadius: 5, borderWidth: 2, borderColor: "#9aa8ba", backgroundColor: "#fff" },
+  checkBoxActive: { borderColor: "#0757a6", backgroundColor: "#0757a6" },
+  checkText: { color: "#42516a", fontWeight: "800" },
   primary: { minHeight: 46, borderRadius: 7, alignItems: "center", justifyContent: "center", backgroundColor: "#0757a6" },
   primaryText: { color: "#fff", fontWeight: "800" },
   secondary: { minHeight: 46, borderRadius: 7, alignItems: "center", justifyContent: "center", backgroundColor: "#f3b20b" },
   secondaryText: { color: "#1c2431", fontWeight: "800" },
+  actionRow: { borderBottomWidth: 1, borderBottomColor: "#edf2f7", paddingBottom: 10, gap: 8 },
+  actionRowButtons: { flexDirection: "row", gap: 8 },
+  actionButton: { flex: 1, minHeight: 40 },
   logout: { width: 44, height: 44, borderRadius: 7, alignItems: "center", justifyContent: "center", backgroundColor: "#eaf3ff" },
   logoutIcon: { position: "relative", width: 25, height: 25 },
   logoutDoor: {

@@ -10,9 +10,13 @@ use Illuminate\Validation\Rule;
 
 class TypeActiviteController extends ApiController
 {
-    public function index(): JsonResponse
+    public function index(Request $request): JsonResponse
     {
-        return $this->ok(['donnees' => TypeActivite::withCount('activites')->orderBy('nom')->get()]);
+        $query = TypeActivite::withCount('activites')->orderBy('nom');
+        if ($request->has('plateforme_id')) {
+            $query->where('plateforme_id', $request->input('plateforme_id'));
+        }
+        return $this->ok(['donnees' => $query->get()]);
     }
 
     public function store(Request $request): JsonResponse
@@ -46,11 +50,12 @@ class TypeActiviteController extends ApiController
     private function valider(Request $request, ?int $id = null): array
     {
         return $request->validate([
+            'plateforme_id' => ['nullable', 'exists:plateformes,id'],
             'nom' => ['required', 'string', 'max:255'],
             'slug' => ['nullable', 'string', 'max:100', Rule::unique('types_activites', 'slug')->ignore($id)],
             'a_versement_recurrent' => ['boolean'],
             'frequence_versement' => ['required', Rule::in(['journalier', 'hebdomadaire', 'mensuel', 'aucun'])],
-            'schema_champs' => ['nullable', 'array'],
+            'schema_champs' => ['nullable'],
             'icone' => ['nullable', 'string', 'max:80'],
             'couleur' => ['nullable', 'string', 'max:30'],
             'actif' => ['boolean'],

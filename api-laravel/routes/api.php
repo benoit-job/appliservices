@@ -4,11 +4,13 @@ use App\Http\Controllers\Api\V1\ActiviteController;
 use App\Http\Controllers\Api\V1\AuditController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\DashboardController;
-use App\Http\Controllers\Api\V1\GraphiqueController;
 use App\Http\Controllers\Api\V1\EcheanceVersementController;
+use App\Http\Controllers\Api\V1\GraphiqueController;
 use App\Http\Controllers\Api\V1\InventaireController;
 use App\Http\Controllers\Api\V1\NotificationController;
+use App\Http\Controllers\Api\V1\CategorieTransactionController;
 use App\Http\Controllers\Api\V1\ParametreController;
+use App\Http\Controllers\Api\V1\PlateformeController;
 use App\Http\Controllers\Api\V1\RapportController;
 use App\Http\Controllers\Api\V1\ReferenceController;
 use App\Http\Controllers\Api\V1\TransactionController;
@@ -56,6 +58,11 @@ Route::prefix('v1')->group(function () {
 
         Route::get('rapports/bilan', [RapportController::class, 'bilan']);
         Route::post('rapports/figer', [RapportController::class, 'figer']);
+
+        Route::apiResource('plateformes', PlateformeController::class);
+        Route::patch('plateformes/{plateforme}/statut', [PlateformeController::class, 'changerStatut']);
+
+        Route::apiResource('categories-transactions', CategorieTransactionController::class);
 
         Route::apiResource('utilisateurs', UtilisateurController::class)->except(['show']);
         Route::get('notifications', [NotificationController::class, 'index']);
