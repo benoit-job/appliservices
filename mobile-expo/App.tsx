@@ -1,4 +1,4 @@
-import { ComponentProps, useEffect, useRef, useState } from "react";
+import { ComponentProps, createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Animated,
@@ -11,11 +11,16 @@ import {
   TextInput,
   View,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { type Language, getTranslation } from "./translations";
 import { api, clearToken, getToken, login, setToken } from "./src/api/client";
 import { ChartFiltersBar } from "./src/components/ChartFilters";
 import { ChartGrid } from "./src/components/ChartPanel";
+import { ThemePicker } from "./src/components/ThemePicker";
 import { enqueueOperation, flushQueue, getQueue } from "./src/storage/offlineQueue";
 import { ChartFilters, defaultChartFilters, filtersToQuery, Graphique } from "./src/types/charts";
+import { createAppStyles, type AppStyles } from "./createAppStyles";
+import { DEFAULT_THEME_ID, THEME_STORAGE_KEY, getTheme, type ThemeColors, type ThemeId } from "./themes";
 
 type Role = { id: number; nom: string; slug?: string };
 type User = { id: number; role_id?: number; nom: string; email: string; telephone?: string; statut?: string; role?: { nom: string }; plateforme?: { id?: number; nom?: string; slug?: string; email_contact?: string; telephone_contact?: string; adresse?: string; image_url?: string | null; statut?: string; limite_utilisateurs?: number; limite_activites?: number } };
@@ -34,24 +39,41 @@ type Parametre = { cle: string; valeur: string; description?: string };
 type Dashboard = { resume?: Resume; activites?: Activite[]; transactions?: Transaction[]; echeances?: Echeance[]; graphiques?: Graphique[] };
 
 const routes = [
-  ["tableau-bord", "Tableau de bord"],
-  ["vue-ensemble", "Vue d'ensemble"],
-  ["activites", "Activites"],
-  ["versements", "Versements"],
-  ["depenses", "Depenses"],
-  ["inventaire", "Inventaire"],
-  ["rapports", "Rapports"],
-  ["types-activites", "Types d'activites"],
-  ["utilisateurs", "Utilisateurs"],
-  ["notifications", "Notifications"],
-  ["audit", "Audit"],
-  ["infos", "Infos"],
-  ["parametres", "Parametres"],
+  ["tableau-bord", "dashboard"],
+  ["vue-ensemble", "overview"],
+  ["activites", "activities"],
+  ["versements", "installments"],
+  ["depenses", "expenses"],
+  ["inventaire", "inventory"],
+  ["rapports", "reports"],
+  ["types-activites", "typeActivities"],
+  ["utilisateurs", "users"],
+  ["audit", "audit"],
+  ["infos", "infos"],
+  ["parametres", "settings"],
 ] as const;
 
-type RouteKey = (typeof routes)[number][0];
+type RouteKey = (typeof routes)[number][0] | "notifications" | "info-plateforme" | "info-compte";
 const linear = (value: number) => value;
 const today = () => new Date().toISOString().slice(0, 10);
+const defaultTheme = getTheme(DEFAULT_THEME_ID);
+const defaultAppStyles = createAppStyles(defaultTheme.colors);
+const AppThemeContext = createContext<{ styles: AppStyles; colors: ThemeColors }>({
+  styles: defaultAppStyles,
+  colors: defaultTheme.colors,
+});
+const AppLocaleContext = createContext<{ lang: Language; t: (key: string) => string }>({
+  lang: "fr",
+  t: (key) => getTranslation("fr", key),
+});
+
+function useAppTheme() {
+  return useContext(AppThemeContext);
+}
+
+function useAppLocale() {
+  return useContext(AppLocaleContext);
+}
 const statusOptions = [
   { id: "actif", nom: "Actif" },
   { id: "en_pause", nom: "En pause" },
@@ -92,6 +114,18 @@ export default function App() {
   const [user, setUserState] = useState<User | null>(null);
   const [route, setRoute] = useState<RouteKey>("tableau-bord");
   const [menuOpen, setMenuOpen] = useState(false);
+  
+  const [lang, setLang] = useState<Language>("fr");
+  const [langMenuOpen, setLangMenuOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [notifPopupOpen, setNotifPopupOpen] = useState(false);
+  const t = (key: Parameters<typeof getTranslation>[1]) => getTranslation(lang, key);
+  const [themeId, setThemeId] = useState<ThemeId>(DEFAULT_THEME_ID);
+  const [themePickerOpen, setThemePickerOpen] = useState(false);
+  const activeTheme = useMemo(() => getTheme(themeId), [themeId]);
+  const colors = activeTheme.colors;
+  const styles = useMemo(() => createAppStyles(colors), [colors]);
+
   const [editingProfile, setEditingProfile] = useState(false);
   const [editingPlatform, setEditingPlatform] = useState(false);
   const [profileForm, setProfileForm] = useState({ nom: "", email: "", telephone: "", statut: "actif" });
@@ -178,6 +212,11 @@ export default function App() {
     statut: "actif",
   });
   const [paramDrafts, setParamDrafts] = useState<Record<string, string>>({});
+  const themed = (node: React.ReactNode) => (
+    <AppThemeContext.Provider value={{ styles, colors }}>
+      <AppLocaleContext.Provider value={{ lang, t }}>{node}</AppLocaleContext.Provider>
+    </AppThemeContext.Provider>
+  );
 
   useEffect(() => {
     if (user) {
@@ -202,6 +241,10 @@ export default function App() {
   }, []);
 
   async function bootstrap() {
+    const savedLang = await AsyncStorage.getItem("koue_lang");
+    if (savedLang === "fr" || savedLang === "en" || savedLang === "es") setLang(savedLang);
+    const savedTheme = await AsyncStorage.getItem(THEME_STORAGE_KEY);
+    if (savedTheme) setThemeId(getTheme(savedTheme).id);
     const savedToken = await getToken();
     if (savedToken) {
       try {
@@ -214,6 +257,17 @@ export default function App() {
     }
     setOfflineCount((await getQueue()).length);
     setReady(true);
+  }
+
+  function changeLanguage(nextLang: Language) {
+    setLang(nextLang);
+    void AsyncStorage.setItem("koue_lang", nextLang);
+    setLangMenuOpen(false);
+  }
+
+  function changeTheme(nextTheme: ThemeId) {
+    setThemeId(nextTheme);
+    void AsyncStorage.setItem(THEME_STORAGE_KEY, nextTheme);
   }
 
   async function handleLogin() {
@@ -494,12 +548,31 @@ export default function App() {
     setMenuOpen(false);
   }
 
+  function handleLogout() {
+    setUserMenuOpen(false);
+    Alert.alert(
+      t("logoutConfirmTitle") || "Confirmation",
+      t("logoutConfirmText") || "Voulez-vous vraiment vous deconnecter ?",
+      [
+        {
+          text: t("cancel") || "Annuler",
+          style: "cancel"
+        },
+        { 
+          text: t("logout") || "Deconnexion", 
+          onPress: () => logout(), 
+          style: "destructive" 
+        }
+      ]
+    );
+  }
+
   if (!ready) {
-    return <Splash />;
+    return themed(<Splash />);
   }
 
   if (!user) {
-    return (
+    return themed(
       <SafeAreaView style={styles.loginScreen}>
         <View style={styles.loginCircleOne} />
         <View style={styles.loginCircleTwo} />
@@ -508,22 +581,22 @@ export default function App() {
             <View style={styles.mobileLogo}>
               <Text style={styles.mobileLogoText}>KC</Text>
             </View>
-            <Text style={styles.mobileKicker}>Groupe multi-activites</Text>
+            <Text style={styles.mobileKicker}>{t("loginKicker")}</Text>
             <Text style={styles.mobileTitle}>KOUE MANAGER</Text>
-            <Text style={styles.mobileSubtitle}>Suivi des versements, depenses, inventaire et alertes depuis le terrain.</Text>
+            <Text style={styles.mobileSubtitle}>{t("loginSubtitle")}</Text>
           </View>
 
           <View style={styles.loginCard}>
             <View>
-              <Text style={styles.loginCardTitle}>Acces securise</Text>
-              <Text style={styles.loginCardText}>Connectez-vous avec le meme compte que sur le web.</Text>
+              <Text style={styles.loginCardTitle}>{t("secureAccess")}</Text>
+              <Text style={styles.loginCardText}>{t("loginHelp")}</Text>
             </View>
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Adresse email</Text>
+              <Text style={styles.inputLabel}>{t("emailAddress")}</Text>
               <TextInput style={styles.loginInput} value={email} onChangeText={setEmail} autoCapitalize="none" />
             </View>
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Mot de passe</Text>
+              <Text style={styles.inputLabel}>{t("password")}</Text>
               <View style={{ position: "relative", flexDirection: "row", alignItems: "center" }}>
                 <TextInput style={[styles.loginInput, { flex: 1 }]} value={password} onChangeText={setPassword} secureTextEntry={!showLoginPassword} />
                 <Pressable onPress={() => setShowLoginPassword(!showLoginPassword)} style={{ position: "absolute", right: 12, padding: 8 }}>
@@ -532,62 +605,114 @@ export default function App() {
               </View>
             </View>
             <Pressable style={styles.loginPrimary} onPress={handleLogin}>
-              <Text style={styles.primaryText}>Se connecter</Text>
+              <Text style={styles.primaryText}>{t("signIn")}</Text>
             </Pressable>
             <View style={styles.loginBadges}>
               <Text style={styles.loginBadge}>Sanctum</Text>
-              <Text style={styles.loginBadge}>Hors ligne</Text>
+              <Text style={styles.loginBadge}>{t("offline")}</Text>
               <Text style={styles.loginBadge}>JSON</Text>
             </View>
           </View>
         </ScrollView>
+        <ThemePicker
+          open={themePickerOpen}
+          activeId={themeId}
+          colors={colors}
+          t={t}
+          onToggle={() => setThemePickerOpen((value) => !value)}
+          onClose={() => setThemePickerOpen(false)}
+          onSelect={changeTheme}
+        />
       </SafeAreaView>
     );
   }
 
-  return (
+  return themed(
     <SafeAreaView style={styles.screen}>
       <View style={styles.appContainer}>
         <View style={styles.appHeader}>
           <View style={styles.headerLeft}>
-            <Pressable style={styles.menuToggle} onPress={() => setMenuOpen((value) => !value)} accessibilityLabel="Ouvrir le menu">
+            <Pressable style={styles.menuToggle} onPress={() => setMenuOpen((value) => !value)} accessibilityLabel={t("openMenu")}>
               <View style={styles.menuBar} />
               <View style={styles.menuBar} />
               <View style={styles.menuBar} />
             </Pressable>
-            <View>
-              <Text style={styles.brand}>KOUE MANAGER</Text>
-              <Text style={styles.muted}>{currentRouteLabel(route)} - {user.nom}</Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.brand}>KOUE MANAGER</Text>
+                <Text style={styles.muted} numberOfLines={1} ellipsizeMode="tail">{t((routes.find((r) => r[0] === route)?.[1] as any) ?? "")} - {user?.nom}</Text>
+              </View>
             </View>
           </View>
           <View style={styles.headerActions}>
-            {syncTooltip && (
-              <View style={styles.syncTooltip} pointerEvents="none">
-                <Text style={styles.syncTooltipText}>Synchroniser hors ligne ({offlineCount})</Text>
-              </View>
-            )}
-            <Pressable
-              style={[styles.syncBtn, offlineCount > 0 && styles.syncBtnActive]}
-              onPress={() => { setSyncTooltip(false); void syncOffline(); }}
-              onLongPress={() => setSyncTooltip(true)}
-              onPressOut={() => setSyncTooltip(false)}
-              accessibilityLabel="Synchroniser hors ligne"
-            >
-              <SyncIcon />
-              {offlineCount > 0 && (
-                <View style={styles.syncBadge}>
-                  <Text style={styles.syncBadgeText}>{offlineCount}</Text>
+            
+            <View style={{ position: "relative" }}>
+              <Pressable style={styles.logout} onPress={() => setLangMenuOpen(!langMenuOpen)}>
+                <Text style={{ fontSize: 16 }}>{lang === "fr" ? "🇫🇷" : lang === "en" ? "🇬🇧" : "🇪🇸"}</Text>
+              </Pressable>
+              {langMenuOpen && (
+                <View style={{ position: "absolute", top: 35, right: 0, width: 112, backgroundColor: colors.navy, borderRadius: 8, padding: 8, zIndex: 1000, borderWidth: 1, borderColor: colors.line }}>
+                  <Pressable onPress={() => changeLanguage("fr")}><Text style={{ color: colors.onPrimary, padding: 4 }}>FR Francais</Text></Pressable>
+                  <Pressable onPress={() => changeLanguage("en")}><Text style={{ color: colors.onPrimary, padding: 4 }}>EN English</Text></Pressable>
+                  <Pressable onPress={() => changeLanguage("es")}><Text style={{ color: colors.onPrimary, padding: 4 }}>ES Espanol</Text></Pressable>
                 </View>
               )}
-            </Pressable>
-            <Pressable style={styles.logout} onPress={logout} accessibilityLabel="Deconnexion">
-              <LogoutIcon />
-            </Pressable>
+            </View>
+
+            <View style={{ position: "relative" }}>
+              <Pressable style={styles.logout} onPress={() => setNotifPopupOpen(!notifPopupOpen)}>
+                <Text style={{ fontSize: 16 }}>🔔</Text>
+              </Pressable>
+              {notifPopupOpen && (
+                <View style={{ position: "absolute", top: 35, right: 0, width: 250, backgroundColor: colors.surface, borderRadius: 8, padding: 12, zIndex: 1000, borderWidth: 1, borderColor: colors.line }}>
+                  <Text style={{ color: colors.text, fontWeight: "600", marginBottom: 10 }}>{t("notifications")}</Text>
+                  <Text style={{ color: colors.muted, fontSize: 13, textAlign: "center", paddingVertical: 10 }}>{t("noNotifications")}</Text>
+                </View>
+              )}
+            </View>
+
+            <View style={{ position: "relative" }}>
+              {syncTooltip && (
+                <View style={[styles.syncTooltip, { right: 0, bottom: -40, width: 140 }]} pointerEvents="none">
+                  <Text style={styles.syncTooltipText}>{t("sync")} ({offlineCount})</Text>
+                </View>
+              )}
+              <Pressable
+                style={[styles.syncBtn, offlineCount > 0 && styles.syncBtnActive]}
+                onPress={() => { setSyncTooltip(false); void syncOffline(); }}
+                onLongPress={() => setSyncTooltip(true)}
+                onPressOut={() => setSyncTooltip(false)}
+                accessibilityLabel={t("syncOffline")}
+              >
+                <SyncIcon />
+                {offlineCount > 0 && (
+                  <View style={styles.syncBadge}>
+                    <Text style={styles.syncBadgeText}>{offlineCount}</Text>
+                  </View>
+                )}
+              </Pressable>
+            </View>
+
+            <View style={{ position: "relative", zIndex: 2000 }}>
+              <Pressable style={styles.logout} onPress={() => setUserMenuOpen(!userMenuOpen)} accessibilityLabel={t("myAccount")}>
+                <Text style={{ fontSize: 20, lineHeight: 22, textAlign: "center" }}>👤</Text>
+              </Pressable>
+              {userMenuOpen && (
+                <View style={{ position: "absolute", top: 40, right: 0, width: 180, backgroundColor: colors.surface, borderRadius: 8, padding: 8, zIndex: 2001, borderWidth: 1, borderColor: colors.line, shadowColor: "#000", shadowOpacity: 0.2, shadowRadius: 10, elevation: 15 }}>
+                  <Pressable style={{ padding: 12, borderBottomWidth: 1, borderBottomColor: colors.line }} onPress={() => { setRoute("info-compte"); setUserMenuOpen(false); }}>
+                    <Text style={{ color: colors.text, fontWeight: "600", fontSize: 15 }}>{t("myAccount")}</Text>
+                  </Pressable>
+                  <Pressable style={{ padding: 12 }} onPress={handleLogout}>
+                    <Text style={{ color: colors.red, fontWeight: "600", fontSize: 15 }}>{t("logout")}</Text>
+                  </Pressable>
+                </View>
+              )}
+            </View>
           </View>
         </View>
 
         {menuOpen && (
-          <>
+          <View style={[StyleSheet.absoluteFill, { zIndex: 999 }]}>
             <Pressable style={styles.menuOverlay} onPress={() => setMenuOpen(false)} />
             <View style={styles.menuWrap}>
               {routes.map(([key, label]) => (
@@ -595,40 +720,48 @@ export default function App() {
                   <Pressable style={[styles.menuItem, (route === key || (key === "infos" && (route === "info-plateforme" || route === "info-compte"))) && styles.menuItemActive]} onPress={() => {
                     if (key === "infos") {
                       setRoute("infos");
-                      // ne pas fermer pour afficher les sous-menus
                       return;
                     }
-                    void openRoute(key);
+                    setRoute(key);
                     setMenuOpen(false);
                   }}>
-                    <Text style={[styles.menuText, (route === key || (key === "infos" && (route === "info-plateforme" || route === "info-compte"))) && styles.menuTextActive]}>{label}</Text>
+                    <Text style={[styles.menuText, (route === key || (key === "infos" && (route === "info-plateforme" || route === "info-compte"))) && styles.menuTextActive]}>{t(label)}</Text>
                   </Pressable>
-                  {key === "infos" && (
-                    <View style={styles.submenuWrap}>
+                  {key === "infos" && (route === "infos" || route === "info-plateforme" || route === "info-compte") && (
+                    <View style={{ position: "absolute", top: 40, left: 10, width: 200, backgroundColor: colors.surface, borderRadius: 8, padding: 8, shadowColor: "#000", shadowOpacity: 0.15, shadowRadius: 10, elevation: 10, zIndex: 1000, borderWidth: 1, borderColor: colors.line }}>
                       <Pressable
-                        style={[styles.submenuItem, route === "info-plateforme" && styles.submenuItemActive]}
+                        style={{ padding: 10, borderBottomWidth: 1, borderBottomColor: colors.line }}
                         onPress={() => { setRoute("info-plateforme"); setMenuOpen(false); }}
                       >
-                        <Text style={[styles.submenuText, route === "info-plateforme" && styles.submenuTextActive]}>📍 Plateforme</Text>
+                        <Text style={{ color: route === "info-plateforme" ? colors.blue : colors.muted, fontWeight: "600" }}>{t("platform")}</Text>
                       </Pressable>
                       <Pressable
-                        style={[styles.submenuItem, route === "info-compte" && styles.submenuItemActive]}
+                        style={{ padding: 10 }}
                         onPress={() => { setRoute("info-compte"); setMenuOpen(false); }}
                       >
-                        <Text style={[styles.submenuText, route === "info-compte" && styles.submenuTextActive]}>👤 Mon compte</Text>
+                        <Text style={{ color: route === "info-compte" ? colors.blue : colors.muted, fontWeight: "600" }}>{t("myAccount")}</Text>
                       </Pressable>
                     </View>
                   )}
                 </View>
               ))}
             </View>
-          </>
+          </View>
         )}
 
         <ScrollView contentContainerStyle={styles.content}>
         {refreshing && <Splash compact />}
         {renderRoute()}
         </ScrollView>
+        <ThemePicker
+          open={themePickerOpen}
+          activeId={themeId}
+          colors={colors}
+          t={t}
+          onToggle={() => setThemePickerOpen((value) => !value)}
+          onClose={() => setThemePickerOpen(false)}
+          onSelect={changeTheme}
+        />
       </View>
     </SafeAreaView>
   );
@@ -638,21 +771,21 @@ export default function App() {
       const resume = dashboard.resume;
       return (
         <>
-          <SectionTitle title="Tableau de bord" subtitle="Vue consolidee des activites." />
+          <SectionTitle title={t("dashboard")} subtitle={t("dashboardSubtitle")} />
           <View style={styles.stats}>
-            <Stat label="Activites" value={resume?.activites ?? 0} />
-            <Stat label="Retards" value={resume?.retards ?? 0} />
-            <Stat label="Resultat" value={money(resume?.resultat)} />
+            <Stat label={t("activitiesCount")} value={resume?.activites ?? 0} />
+            <Stat label={t("delays")} value={resume?.retards ?? 0} />
+            <Stat label={t("result")} value={money(resume?.resultat)} />
           </View>
           <View style={styles.stats}>
-            <Stat label="Revenus" value={money(resume?.revenus)} />
-            <Stat label="Depenses" value={money(resume?.decaissements)} />
-            <Stat label="Inventaire" value={money(resume?.inventaire)} />
+            <Stat label={t("income")} value={money(resume?.revenus)} />
+            <Stat label={t("decaissements")} value={money(resume?.decaissements)} />
+            <Stat label={t("inventoryValue")} value={money(resume?.inventaire)} />
           </View>
-          <ChartGrid graphiques={dashboard.graphiques ?? []} compact />
-          <ListCard title="Echeances recentes" empty="Aucune echeance.">
+          <ChartGrid graphiques={dashboard.graphiques ?? []} compact colors={colors} emptyText={t("noCharts")} />
+          <ListCard title={t("recentDeadlines")} empty={t("noDeadlines")}>
             {(dashboard.echeances ?? []).slice(0, 5).map((item) => (
-              <DataRow key={item.id} title={item.activite?.nom ?? "-"} subtitle={item.activite?.code ?? "-"} value={item.statut} />
+              <DataRow key={item.id} title={item.activite?.nom ?? "-"} subtitle={item.activite?.code ?? "-"} value={t(item.statut)} />
             ))}
           </ListCard>
         </>
@@ -662,14 +795,16 @@ export default function App() {
     if (route === "vue-ensemble") {
       return (
         <>
-          <SectionTitle title="Vue d'ensemble" subtitle="Tous les graphiques avec filtres precis." />
+          <SectionTitle title={t("overview")} subtitle={t("overviewSubtitle")} />
           <ChartFiltersBar
             filters={chartFiltersDraft}
             activites={references.activites}
             onChange={setChartFiltersDraft}
             onApply={() => void appliquerFiltresGraphiques()}
+            colors={colors}
+            t={t}
           />
-          <ChartGrid graphiques={vueEnsemble} />
+          <ChartGrid graphiques={vueEnsemble} colors={colors} emptyText={t("noCharts")} />
         </>
       );
     }
@@ -677,21 +812,21 @@ export default function App() {
     if (route === "activites") {
       return (
         <>
-          <SectionTitle title="Activites" subtitle="Creez tout nouveau business sans modifier le schema." />
-          <FormCard title="Nouvelle activite">
-            <ChoiceGroup label="Type" items={references.types_activites} selected={activiteDraft.type_activite_id} onSelect={(value) => setActiviteDraft((draft) => ({ ...draft, type_activite_id: value }))} />
-            <ChoiceGroup label="Gerant assigne" items={references.utilisateurs} selected={activiteDraft.gerant_utilisateur_id} onSelect={(value) => setActiviteDraft((draft) => ({ ...draft, gerant_utilisateur_id: value }))} optional />
-            <Field label="Code" value={activiteDraft.code} onChangeText={(value) => setActiviteDraft((draft) => ({ ...draft, code: value }))} placeholder="MOTO-04" />
-            <Field label="Nom" value={activiteDraft.nom} onChangeText={(value) => setActiviteDraft((draft) => ({ ...draft, nom: value }))} placeholder="Nom de l'activite" />
-            <Field label="Versement attendu" value={activiteDraft.montant_versement} onChangeText={(value) => setActiviteDraft((draft) => ({ ...draft, montant_versement: value }))} keyboardType="numeric" />
-            <Field label="Date demarrage" value={activiteDraft.date_demarrage} onChangeText={(value) => setActiviteDraft((draft) => ({ ...draft, date_demarrage: value }))} placeholder="YYYY-MM-DD" />
-            <ChoiceGroup label="Statut" items={statusOptions} selected={activiteDraft.statut} onSelect={(value) => setActiviteDraft((draft) => ({ ...draft, statut: value }))} />
-            <Field label="Attributs JSON" value={activiteDraft.attributs} onChangeText={(value) => setActiviteDraft((draft) => ({ ...draft, attributs: value }))} placeholder='{"plaque":"1234CI"}' multiline />
-            <Pressable style={styles.primary} onPress={() => void submitActiviteMobile()}><Text style={styles.primaryText}>Enregistrer</Text></Pressable>
+          <SectionTitle title={t("activities")} subtitle={t("activitiesSubtitle")} />
+          <FormCard title={t("newActivity")}>
+            <ChoiceGroup label={t("type")} items={references.types_activites} selected={activiteDraft.type_activite_id} onSelect={(value) => setActiviteDraft((draft) => ({ ...draft, type_activite_id: value }))} />
+            <ChoiceGroup label={t("assignedManager")} items={references.utilisateurs} selected={activiteDraft.gerant_utilisateur_id} onSelect={(value) => setActiviteDraft((draft) => ({ ...draft, gerant_utilisateur_id: value }))} optional />
+            <Field label={t("code")} value={activiteDraft.code} onChangeText={(value) => setActiviteDraft((draft) => ({ ...draft, code: value }))} placeholder="MOTO-04" />
+            <Field label={t("name")} value={activiteDraft.nom} onChangeText={(value) => setActiviteDraft((draft) => ({ ...draft, nom: value }))} placeholder={t("newActivity")} />
+            <Field label={t("expectedInstallment")} value={activiteDraft.montant_versement} onChangeText={(value) => setActiviteDraft((draft) => ({ ...draft, montant_versement: value }))} keyboardType="numeric" />
+            <Field label={t("startDate")} value={activiteDraft.date_demarrage} onChangeText={(value) => setActiviteDraft((draft) => ({ ...draft, date_demarrage: value }))} placeholder="YYYY-MM-DD" />
+            <ChoiceGroup label={t("status")} items={statusOptions} selected={activiteDraft.statut} onSelect={(value) => setActiviteDraft((draft) => ({ ...draft, statut: value }))} />
+            <Field label={t("jsonAttributes")} value={activiteDraft.attributs} onChangeText={(value) => setActiviteDraft((draft) => ({ ...draft, attributs: value }))} placeholder='{"plaque":"1234CI"}' multiline />
+            <Pressable style={styles.primary} onPress={() => void submitActiviteMobile()}><Text style={styles.primaryText}>{t("save")}</Text></Pressable>
           </FormCard>
-          <ListCard title="Liste des activites" empty="Aucune activite.">
+          <ListCard title={t("activitiesList")} empty={t("noActivities")}>
             {activites.map((item) => (
-              <DataRow key={item.id} title={item.nom} subtitle={`${item.code} - ${item.type_activite?.nom ?? "Type"} - ${item.gerant?.nom ?? "Sans gerant"}`} value={item.statut} />
+              <DataRow key={item.id} title={item.nom} subtitle={`${item.code} - ${item.type_activite?.nom ?? t("typeFallback")} - ${item.gerant?.nom ?? t("noManager")}`} value={t(item.statut)} />
             ))}
           </ListCard>
         </>
@@ -701,11 +836,11 @@ export default function App() {
     if (route === "versements") {
       return (
         <>
-          <SectionTitle title="Versements" subtitle="Saisie rapide et suivi des paiements." />
+          <SectionTitle title={t("installments")} subtitle={t("installmentsSubtitle")} />
           <TransactionFormCard type="revenu" />
-          <ListCard title="Echeances" empty="Aucune echeance.">
+          <ListCard title={t("deadlines")} empty={t("noInstallments")}>
             {echeances.map((item) => (
-              <DataRow key={item.id} title={item.activite?.nom ?? "-"} subtitle={`${money(item.montant_paye)} / ${money(item.montant_attendu)}`} value={item.statut} />
+              <DataRow key={item.id} title={item.activite?.nom ?? "-"} subtitle={`${money(item.montant_paye)} / ${money(item.montant_attendu)}`} value={t(item.statut)} />
             ))}
           </ListCard>
         </>
@@ -715,19 +850,19 @@ export default function App() {
     if (route === "depenses") {
       return (
         <>
-          <SectionTitle title="Depenses" subtitle="Decaissements et historique." />
+          <SectionTitle title={t("expenses")} subtitle={t("expensesSubtitle")} />
           <TransactionFormCard type="decaissement" />
-          <ListCard title="Historique" empty="Aucune depense.">
+          <ListCard title={t("history")} empty={t("noExpenses")}>
             {transactions.map((item) => (
               item.statut_validation === "en_attente" ? (
                 <ActionRow
                   key={item.id}
                   title={item.categorie?.nom ?? "Depense"}
                   subtitle={`${date(item.date_transaction)} - ${item.activite?.nom ?? "-"} - ${money(item.montant)}`}
-                  value="en attente"
+                  value={t("pending")}
                   actions={[
-                    ["Valider", () => void validerTransactionMobile(item.id, "valide")],
-                    ["Rejeter", () => void validerTransactionMobile(item.id, "rejete")],
+                    [t("validate"), () => void validerTransactionMobile(item.id, "valide")],
+                    [t("reject"), () => void validerTransactionMobile(item.id, "rejete")],
                   ]}
                 />
               ) : (
@@ -742,26 +877,26 @@ export default function App() {
     if (route === "inventaire") {
       return (
         <>
-          <SectionTitle title="Inventaire" subtitle="Biens, stocks, cheptel et mouvements traces." />
-          <FormCard title="Nouvel article">
-            <ChoiceGroup label="Activite" items={references.activites} selected={articleDraft.activite_id} onSelect={(value) => setArticleDraft((draft) => ({ ...draft, activite_id: value }))} />
-            <Field label="Nom" value={articleDraft.nom} onChangeText={(value) => setArticleDraft((draft) => ({ ...draft, nom: value }))} placeholder="Nom de l'article" />
-            <ChoiceGroup label="Type article" items={articleTypeOptions} selected={articleDraft.type_article} onSelect={(value) => setArticleDraft((draft) => ({ ...draft, type_article: value }))} />
-            <Field label="Quantite" value={articleDraft.quantite} onChangeText={(value) => setArticleDraft((draft) => ({ ...draft, quantite: value }))} keyboardType="numeric" />
-            <Field label="Unite" value={articleDraft.unite} onChangeText={(value) => setArticleDraft((draft) => ({ ...draft, unite: value }))} />
-            <Field label="Valeur unitaire" value={articleDraft.valeur_unitaire} onChangeText={(value) => setArticleDraft((draft) => ({ ...draft, valeur_unitaire: value }))} keyboardType="numeric" />
-            <Field label="Seuil d'alerte" value={articleDraft.seuil_alerte} onChangeText={(value) => setArticleDraft((draft) => ({ ...draft, seuil_alerte: value }))} keyboardType="numeric" />
-            <Pressable style={styles.primary} onPress={() => void submitArticleMobile()}><Text style={styles.primaryText}>Enregistrer</Text></Pressable>
+          <SectionTitle title={t("inventory")} subtitle={t("inventorySubtitle")} />
+          <FormCard title={t("newArticle")}>
+            <ChoiceGroup label={t("activity")} items={references.activites} selected={articleDraft.activite_id} onSelect={(value) => setArticleDraft((draft) => ({ ...draft, activite_id: value }))} />
+            <Field label={t("name")} value={articleDraft.nom} onChangeText={(value) => setArticleDraft((draft) => ({ ...draft, nom: value }))} placeholder={t("newArticle")} />
+            <ChoiceGroup label={t("itemType")} items={articleTypeOptions} selected={articleDraft.type_article} onSelect={(value) => setArticleDraft((draft) => ({ ...draft, type_article: value }))} />
+            <Field label={t("quantity")} value={articleDraft.quantite} onChangeText={(value) => setArticleDraft((draft) => ({ ...draft, quantite: value }))} keyboardType="numeric" />
+            <Field label={t("unit")} value={articleDraft.unite} onChangeText={(value) => setArticleDraft((draft) => ({ ...draft, unite: value }))} />
+            <Field label={t("unitValue")} value={articleDraft.valeur_unitaire} onChangeText={(value) => setArticleDraft((draft) => ({ ...draft, valeur_unitaire: value }))} keyboardType="numeric" />
+            <Field label={t("alertThreshold")} value={articleDraft.seuil_alerte} onChangeText={(value) => setArticleDraft((draft) => ({ ...draft, seuil_alerte: value }))} keyboardType="numeric" />
+            <Pressable style={styles.primary} onPress={() => void submitArticleMobile()}><Text style={styles.primaryText}>{t("save")}</Text></Pressable>
           </FormCard>
-          <FormCard title="Mouvement de stock">
-            <ChoiceGroup label="Article" items={articles} selected={mouvementDraft.article_id} onSelect={(value) => setMouvementDraft((draft) => ({ ...draft, article_id: value }))} />
-            <ChoiceGroup label="Type mouvement" items={movementTypeOptions} selected={mouvementDraft.type_mouvement} onSelect={(value) => setMouvementDraft((draft) => ({ ...draft, type_mouvement: value }))} />
-            <Field label="Quantite" value={mouvementDraft.quantite} onChangeText={(value) => setMouvementDraft((draft) => ({ ...draft, quantite: value }))} keyboardType="numeric" />
-            <Field label="Motif" value={mouvementDraft.motif} onChangeText={(value) => setMouvementDraft((draft) => ({ ...draft, motif: value }))} />
-            <Field label="Date mouvement" value={mouvementDraft.date_mouvement} onChangeText={(value) => setMouvementDraft((draft) => ({ ...draft, date_mouvement: value }))} placeholder="YYYY-MM-DD" />
-            <Pressable style={styles.primary} onPress={() => void submitMouvementMobile()}><Text style={styles.primaryText}>Enregistrer</Text></Pressable>
+          <FormCard title={t("stockMovement")}>
+            <ChoiceGroup label={t("article")} items={articles} selected={mouvementDraft.article_id} onSelect={(value) => setMouvementDraft((draft) => ({ ...draft, article_id: value }))} />
+            <ChoiceGroup label={t("movementType")} items={movementTypeOptions} selected={mouvementDraft.type_mouvement} onSelect={(value) => setMouvementDraft((draft) => ({ ...draft, type_mouvement: value }))} />
+            <Field label={t("quantity")} value={mouvementDraft.quantite} onChangeText={(value) => setMouvementDraft((draft) => ({ ...draft, quantite: value }))} keyboardType="numeric" />
+            <Field label={t("reason")} value={mouvementDraft.motif} onChangeText={(value) => setMouvementDraft((draft) => ({ ...draft, motif: value }))} />
+            <Field label={t("movementDate")} value={mouvementDraft.date_mouvement} onChangeText={(value) => setMouvementDraft((draft) => ({ ...draft, date_mouvement: value }))} placeholder="YYYY-MM-DD" />
+            <Pressable style={styles.primary} onPress={() => void submitMouvementMobile()}><Text style={styles.primaryText}>{t("save")}</Text></Pressable>
           </FormCard>
-          <ListCard title="Articles" empty="Aucun article.">
+          <ListCard title={t("articles")} empty={t("noArticles")}>
             {articles.map((item) => (
               <DataRow key={item.id} title={item.nom} subtitle={`${item.activite?.nom ?? "-"} - ${item.quantite} ${item.unite} - seuil ${item.seuil_alerte ?? "-"}`} value={money(Number(item.quantite) * Number(item.valeur_unitaire))} />
             ))}
@@ -773,21 +908,21 @@ export default function App() {
     if (route === "rapports") {
       return (
         <>
-          <SectionTitle title="Rapports" subtitle="Bilan consolide." />
-          <FormCard title="Filtre de periode">
-            <Field label="Debut" value={rapportDraft.debut} onChangeText={(value) => setRapportDraft((draft) => ({ ...draft, debut: value }))} placeholder="YYYY-MM-DD" />
-            <Field label="Fin" value={rapportDraft.fin} onChangeText={(value) => setRapportDraft((draft) => ({ ...draft, fin: value }))} placeholder="YYYY-MM-DD" />
+          <SectionTitle title={t("reports")} subtitle={t("reportsSubtitle")} />
+          <FormCard title={t("periodFilter")}>
+            <Field label={t("start")} value={rapportDraft.debut} onChangeText={(value) => setRapportDraft((draft) => ({ ...draft, debut: value }))} placeholder="YYYY-MM-DD" />
+            <Field label={t("end")} value={rapportDraft.fin} onChangeText={(value) => setRapportDraft((draft) => ({ ...draft, fin: value }))} placeholder="YYYY-MM-DD" />
             <View style={styles.actionRowButtons}>
-              <Pressable style={[styles.primary, styles.actionButton]} onPress={() => void filtrerRapportMobile()}><Text style={styles.primaryText}>Filtrer</Text></Pressable>
-              <Pressable style={[styles.secondary, styles.actionButton]} onPress={() => void figerRapportMobile()}><Text style={styles.secondaryText}>Figer</Text></Pressable>
+              <Pressable style={[styles.primary, styles.actionButton]} onPress={() => void filtrerRapportMobile()}><Text style={styles.primaryText}>{t("filter")}</Text></Pressable>
+              <Pressable style={[styles.secondary, styles.actionButton]} onPress={() => void figerRapportMobile()}><Text style={styles.secondaryText}>{t("freeze")}</Text></Pressable>
             </View>
           </FormCard>
           <View style={styles.stats}>
-            <Stat label="Revenus" value={money(rapport?.totaux?.revenus)} />
-            <Stat label="Depenses" value={money(rapport?.totaux?.decaissements)} />
-            <Stat label="Resultat" value={money(rapport?.totaux?.resultat)} />
+            <Stat label={t("income")} value={money(rapport?.totaux?.revenus)} />
+            <Stat label={t("decaissements")} value={money(rapport?.totaux?.decaissements)} />
+            <Stat label={t("result")} value={money(rapport?.totaux?.resultat)} />
           </View>
-          <ListCard title="Par activite" empty="Aucune donnee.">
+          <ListCard title={t("byActivity")} empty={t("noData")}>
             {(rapport?.activites ?? []).map((item) => (
               <DataRow key={item.id ?? item.code} title={item.nom} subtitle={item.type_activite ?? item.code} value={money(item.resultat)} />
             ))}
@@ -799,19 +934,19 @@ export default function App() {
     if (route === "utilisateurs") {
       return (
         <>
-          <SectionTitle title="Utilisateurs" subtitle="Comptes web et mobile avec roles." />
-          <FormCard title="Nouvel utilisateur">
-            <ChoiceGroup label="Role" items={references.roles} selected={userDraft.role_id} onSelect={(value) => setUserDraft((draft) => ({ ...draft, role_id: value }))} />
-            <Field label="Nom" value={userDraft.nom} onChangeText={(value) => setUserDraft((draft) => ({ ...draft, nom: value }))} />
-            <Field label="Email" value={userDraft.email} onChangeText={(value) => setUserDraft((draft) => ({ ...draft, email: value }))} autoCapitalize="none" keyboardType="email-address" />
-            <Field label="Mot de passe" value={userDraft.mot_de_passe} onChangeText={(value) => setUserDraft((draft) => ({ ...draft, mot_de_passe: value }))} secureTextEntry showPassword={showUserPassword} onTogglePassword={() => setShowUserPassword(!showUserPassword)} />
-            <Field label="Telephone" value={userDraft.telephone} onChangeText={(value) => setUserDraft((draft) => ({ ...draft, telephone: value }))} keyboardType="phone-pad" />
-            <ChoiceGroup label="Statut" items={userStatusOptions} selected={userDraft.statut} onSelect={(value) => setUserDraft((draft) => ({ ...draft, statut: value }))} />
-            <Pressable style={styles.primary} onPress={() => void submitUtilisateurMobile()}><Text style={styles.primaryText}>Enregistrer</Text></Pressable>
+          <SectionTitle title={t("users")} subtitle={t("usersSubtitle")} />
+          <FormCard title={t("newUser")}>
+            <ChoiceGroup label={t("role")} items={references.roles} selected={userDraft.role_id} onSelect={(value) => setUserDraft((draft) => ({ ...draft, role_id: value }))} />
+            <Field label={t("name")} value={userDraft.nom} onChangeText={(value) => setUserDraft((draft) => ({ ...draft, nom: value }))} />
+            <Field label={t("email")} value={userDraft.email} onChangeText={(value) => setUserDraft((draft) => ({ ...draft, email: value }))} autoCapitalize="none" keyboardType="email-address" />
+            <Field label={t("password")} value={userDraft.mot_de_passe} onChangeText={(value) => setUserDraft((draft) => ({ ...draft, mot_de_passe: value }))} secureTextEntry showPassword={showUserPassword} onTogglePassword={() => setShowUserPassword(!showUserPassword)} />
+            <Field label={t("phone")} value={userDraft.telephone} onChangeText={(value) => setUserDraft((draft) => ({ ...draft, telephone: value }))} keyboardType="phone-pad" />
+            <ChoiceGroup label={t("status")} items={userStatusOptions} selected={userDraft.statut} onSelect={(value) => setUserDraft((draft) => ({ ...draft, statut: value }))} />
+            <Pressable style={styles.primary} onPress={() => void submitUtilisateurMobile()}><Text style={styles.primaryText}>{t("save")}</Text></Pressable>
           </FormCard>
-          <ListCard title="Comptes" empty="Aucun utilisateur.">
+          <ListCard title={t("accounts")} empty={t("noUsers")}>
             {utilisateurs.map((item) => (
-              <DataRow key={item.id ?? item.email} title={item.nom} subtitle={`${item.email} - ${item.telephone ?? "-"}`} value={item.role?.nom ?? "Role"} />
+              <DataRow key={item.id ?? item.email} title={item.nom} subtitle={`${item.email} - ${item.telephone ?? "-"}`} value={item.role?.nom ?? t("roleFallback")} />
             ))}
           </ListCard>
         </>
@@ -821,27 +956,27 @@ export default function App() {
     if (route === "types-activites") {
       return (
         <>
-          <SectionTitle title="Types d'activites" subtitle="Configuration des business." />
-          <FormCard title="Nouveau type">
-            <Field label="Nom" value={typeDraft.nom} onChangeText={(value) => setTypeDraft((draft) => ({ ...draft, nom: value }))} />
-            <Field label="Slug" value={typeDraft.slug} onChangeText={(value) => setTypeDraft((draft) => ({ ...draft, slug: value }))} />
-            <ChoiceGroup label="Frequence" items={frequencyOptions} selected={typeDraft.frequence_versement} onSelect={(value) => setTypeDraft((draft) => ({ ...draft, frequence_versement: value }))} />
+          <SectionTitle title={t("typeActivities")} subtitle={t("typeActivitiesSubtitle")} />
+          <FormCard title={t("newType")}>
+            <Field label={t("name")} value={typeDraft.nom} onChangeText={(value) => setTypeDraft((draft) => ({ ...draft, nom: value }))} />
+            <Field label={t("slug")} value={typeDraft.slug} onChangeText={(value) => setTypeDraft((draft) => ({ ...draft, slug: value }))} />
+            <ChoiceGroup label={t("frequency")} items={frequencyOptions} selected={typeDraft.frequence_versement} onSelect={(value) => setTypeDraft((draft) => ({ ...draft, frequence_versement: value }))} />
             <Pressable style={styles.checkRow} onPress={() => setTypeDraft((draft) => ({ ...draft, a_versement_recurrent: !draft.a_versement_recurrent }))}>
               <View style={[styles.checkBox, typeDraft.a_versement_recurrent && styles.checkBoxActive]} />
-              <Text style={styles.checkText}>Versement recurrent</Text>
+              <Text style={styles.checkText}>{t("recurrentInstallment")}</Text>
             </Pressable>
-            <Field label="Icone" value={typeDraft.icone} onChangeText={(value) => setTypeDraft((draft) => ({ ...draft, icone: value }))} />
-            <Field label="Couleur" value={typeDraft.couleur} onChangeText={(value) => setTypeDraft((draft) => ({ ...draft, couleur: value }))} placeholder="#0757a6" />
-            <Field label="Champs dynamiques" value={typeDraft.schema_champs} onChangeText={(value) => setTypeDraft((draft) => ({ ...draft, schema_champs: value }))} placeholder={"plaque:texte\nnombre_tetes:nombre"} multiline />
-            <Pressable style={styles.primary} onPress={() => void submitTypeActiviteMobile()}><Text style={styles.primaryText}>Enregistrer</Text></Pressable>
+            <Field label={t("icon")} value={typeDraft.icone} onChangeText={(value) => setTypeDraft((draft) => ({ ...draft, icone: value }))} />
+            <Field label={t("color")} value={typeDraft.couleur} onChangeText={(value) => setTypeDraft((draft) => ({ ...draft, couleur: value }))} placeholder={colors.blue} />
+            <Field label={t("dynamicFields")} value={typeDraft.schema_champs} onChangeText={(value) => setTypeDraft((draft) => ({ ...draft, schema_champs: value }))} placeholder={"plaque:texte\nnombre_tetes:nombre"} multiline />
+            <Pressable style={styles.primary} onPress={() => void submitTypeActiviteMobile()}><Text style={styles.primaryText}>{t("save")}</Text></Pressable>
           </FormCard>
-          <ListCard title="Types configures" empty="Aucun type.">
+          <ListCard title={t("configuredTypes")} empty={t("noTypes")}>
             {typesActivites.map((item) => (
               <DataRow
                 key={item.id}
                 title={item.nom}
-                subtitle={`${item.frequence_versement} - ${item.a_versement_recurrent ? "versement recurrent" : "sans versement"}`}
-                value={item.actif ? `${item.activites_count ?? 0} act.` : "inactif"}
+                subtitle={`${item.frequence_versement} - ${item.a_versement_recurrent ? t("recurrentInstallment") : t("withoutInstallment")}`}
+                value={item.actif ? `${item.activites_count ?? 0} ${t("actShort")}` : t("inactive")}
               />
             ))}
           </ListCard>
@@ -852,13 +987,13 @@ export default function App() {
     if (route === "notifications") {
       return (
         <>
-          <SectionTitle title="Notifications" subtitle="Alertes et rappels." />
-          <ListCard title="Centre d'alertes" empty="Aucune notification.">
+          <SectionTitle title={t("notifications")} subtitle={t("notificationsSubtitle")} />
+          <ListCard title={t("alertCenter")} empty={t("noNotifications")}>
             {notifications.map((item) => (
               item.lu ? (
-                <DataRow key={item.id} title={item.titre} subtitle={item.message} value="Lue" />
+                <DataRow key={item.id} title={item.titre} subtitle={item.message} value={t("read")} />
               ) : (
-                <ActionRow key={item.id} title={item.titre} subtitle={item.message} value={item.type_notification} actions={[["Marquer lue", () => void marquerNotificationLue(item.id)]]} />
+                <ActionRow key={item.id} title={item.titre} subtitle={item.message} value={item.type_notification} actions={[[t("markRead"), () => void marquerNotificationLue(item.id)]]} />
               )
             ))}
           </ListCard>
@@ -869,13 +1004,13 @@ export default function App() {
     if (route === "audit") {
       return (
         <>
-          <SectionTitle title="Audit" subtitle="Actions sensibles tracees." />
-          <ListCard title="Dernieres actions" empty="Aucune action.">
+          <SectionTitle title={t("audit")} subtitle={t("auditSubtitle")} />
+          <ListCard title={t("lastActions")} empty={t("noActions")}>
             {auditLogs.map((item) => (
               <DataRow
                 key={item.id}
                 title={`${item.action} - ${item.entite}`}
-                subtitle={`${item.utilisateur?.nom ?? "Systeme"}${item.created_at ? ` - ${date(item.created_at)}` : ""}`}
+                subtitle={`${item.utilisateur?.nom ?? t("system")}${item.created_at ? ` - ${date(item.created_at)}` : ""}`}
                 value={item.entite_id ? `#${item.entite_id}` : "-"}
               />
             ))}
@@ -885,13 +1020,13 @@ export default function App() {
     }
 
     if (route === "info-plateforme" || route === "infos") {
-      const plateforme = user.plateforme ?? {};
+      const plateforme = user?.plateforme ?? {};
       return (
         <>
-          <SectionTitle title="Plateforme" subtitle="Informations associees a votre espace." />
-          <FormCard title="Plateforme">
+          <SectionTitle title={t("platform")} subtitle={t("platformSubtitle")} />
+          <FormCard title={t("platform")}>
             <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-              <View style={{ width: 92, height: 92, borderRadius: 20, backgroundColor: "#edf2f7", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+              <View style={{ width: 92, height: 92, borderRadius: 20, backgroundColor: colors.accentBg, alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
                 {plateforme.image_url ? (
                   <Image source={{ uri: plateforme.image_url }} style={{ width: "100%", height: "100%" }} resizeMode="cover" />
                 ) : (
@@ -899,27 +1034,29 @@ export default function App() {
                 )}
               </View>
               <Pressable style={styles.secondary} onPress={() => setEditingPlatform((value) => !value)}>
-                <Text style={styles.secondaryText}>{editingPlatform ? "Annuler" : "Modifier"}</Text>
+                <Text style={styles.secondaryText}>{editingPlatform ? t("cancel") : t("edit")}</Text>
               </Pressable>
             </View>
 
             {!editingPlatform ? (
               <>
-                <Field label="Nom" value={plateforme.nom ?? "-"} editable={false} />
-                <Field label="Slug" value={plateforme.slug ?? "-"} editable={false} />
-                <Field label="Email" value={plateforme.email_contact ?? "-"} editable={false} />
-                <Field label="Telephone" value={plateforme.telephone_contact ?? "-"} editable={false} />
-                <Field label="Adresse" value={plateforme.adresse ?? "-"} editable={false} />
+                <DataRow title={t("platformId")} subtitle={t("uniqueIdentifier")} value={user?.plateforme?.id?.toString() ?? "-"} />
+                <DataRow title={t("name")} subtitle={t("platformName")} value={plateforme.nom ?? "-"} />
+                <DataRow title={t("slugUrl")} subtitle={t("uniqueLink")} value={user?.plateforme?.slug ?? "-"} />
+                <DataRow title={t("contactEmail")} subtitle={t("publicEmail")} value={user?.plateforme?.email_contact ?? "-"} />
+                <DataRow title={t("phone")} subtitle={t("contactNumber")} value={user?.plateforme?.telephone_contact ?? "-"} />
+                <DataRow title={t("address")} subtitle={t("location")} value={user?.plateforme?.adresse ?? "-"} />
+                <DataRow title={t("status")} subtitle={t("accountState")} value={user?.plateforme?.statut ? t(user.plateforme.statut) : "-"} />
               </>
             ) : (
               <>
-                <Field label="Nom" value={platformForm.nom} onChangeText={(value) => setPlatformForm((prev) => ({ ...prev, nom: value }))} />
-                <Field label="Slug" value={platformForm.slug} onChangeText={(value) => setPlatformForm((prev) => ({ ...prev, slug: value }))} />
-                <Field label="Email" value={platformForm.email_contact} onChangeText={(value) => setPlatformForm((prev) => ({ ...prev, email_contact: value }))} keyboardType="email-address" autoCapitalize="none" />
-                <Field label="Telephone" value={platformForm.telephone_contact} onChangeText={(value) => setPlatformForm((prev) => ({ ...prev, telephone_contact: value }))} keyboardType="phone-pad" />
-                <Field label="Adresse" value={platformForm.adresse} onChangeText={(value) => setPlatformForm((prev) => ({ ...prev, adresse: value }))} />
+                <Field label={t("name")} value={platformForm.nom} onChangeText={(value) => setPlatformForm((prev) => ({ ...prev, nom: value }))} />
+                <Field label={t("slug")} value={platformForm.slug} onChangeText={(value) => setPlatformForm((prev) => ({ ...prev, slug: value }))} />
+                <Field label={t("email")} value={platformForm.email_contact} onChangeText={(value) => setPlatformForm((prev) => ({ ...prev, email_contact: value }))} keyboardType="email-address" autoCapitalize="none" />
+                <Field label={t("phone")} value={platformForm.telephone_contact} onChangeText={(value) => setPlatformForm((prev) => ({ ...prev, telephone_contact: value }))} keyboardType="phone-pad" />
+                <Field label={t("address")} value={platformForm.adresse} onChangeText={(value) => setPlatformForm((prev) => ({ ...prev, adresse: value }))} />
                 <Pressable style={styles.primary} onPress={() => void savePlatform()}>
-                  <Text style={styles.primaryText}>Enregistrer</Text>
+                  <Text style={styles.primaryText}>{t("save")}</Text>
                 </Pressable>
               </>
             )}
@@ -931,33 +1068,33 @@ export default function App() {
     if (route === "info-compte") {
       return (
         <>
-          <SectionTitle title="Mon compte" subtitle="Informations de profil." />
-          <FormCard title="Compte">
+          <SectionTitle title={t("myAccount")} subtitle={t("myAccountSubtitle")} />
+          <FormCard title={t("account")}>
             <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-              <View style={{ width: 58, height: 58, borderRadius: 29, backgroundColor: "#0757a6", alignItems: "center", justifyContent: "center" }}>
-                <Text style={{ color: "#fff", fontWeight: "900", fontSize: 22 }}>{user.nom?.charAt(0)?.toUpperCase() ?? "U"}</Text>
+              <View style={{ width: 58, height: 58, borderRadius: 29, backgroundColor: colors.blue, alignItems: "center", justifyContent: "center" }}>
+                <Text style={{ color: colors.onPrimary, fontWeight: "900", fontSize: 22 }}>{user?.nom?.charAt(0)?.toUpperCase() ?? "U"}</Text>
               </View>
               <Pressable style={styles.secondary} onPress={() => setEditingProfile((value) => !value)}>
-                <Text style={styles.secondaryText}>{editingProfile ? "Annuler" : "Modifier"}</Text>
+                <Text style={styles.secondaryText}>{editingProfile ? t("cancel") : t("edit")}</Text>
               </Pressable>
             </View>
 
             {!editingProfile ? (
               <>
-                <Field label="Nom" value={user.nom} editable={false} />
-                <Field label="Email" value={user.email} editable={false} />
-                <Field label="Telephone" value={user.telephone ?? "-"} editable={false} />
-                <Field label="Role" value={user.role?.nom ?? "-"} editable={false} />
-                <Field label="Plateforme" value={user.plateforme?.nom ?? "-"} editable={false} />
+                <Field label={t("name")} value={user?.nom ?? ""} editable={false} />
+                <Field label={t("email")} value={user?.email ?? ""} editable={false} />
+                <Field label={t("phone")} value={user?.telephone ?? "-"} editable={false} />
+                <Field label={t("role")} value={user?.role?.nom ?? "-"} editable={false} />
+                <Field label={t("platform")} value={user?.plateforme?.nom ?? "-"} editable={false} />
               </>
             ) : (
               <>
-                <Field label="Nom" value={profileForm.nom} onChangeText={(value) => setProfileForm((prev) => ({ ...prev, nom: value }))} />
-                <Field label="Email" value={profileForm.email} onChangeText={(value) => setProfileForm((prev) => ({ ...prev, email: value }))} autoCapitalize="none" keyboardType="email-address" />
-                <Field label="Telephone" value={profileForm.telephone} onChangeText={(value) => setProfileForm((prev) => ({ ...prev, telephone: value }))} keyboardType="phone-pad" />
-                <Field label="Statut" value={profileForm.statut} onChangeText={(value) => setProfileForm((prev) => ({ ...prev, statut: value }))} />
+                <Field label={t("name")} value={profileForm.nom} onChangeText={(value) => setProfileForm((prev) => ({ ...prev, nom: value }))} />
+                <Field label={t("email")} value={profileForm.email} onChangeText={(value) => setProfileForm((prev) => ({ ...prev, email: value }))} autoCapitalize="none" keyboardType="email-address" />
+                <Field label={t("phone")} value={profileForm.telephone} onChangeText={(value) => setProfileForm((prev) => ({ ...prev, telephone: value }))} keyboardType="phone-pad" />
+                <Field label={t("status")} value={profileForm.statut} onChangeText={(value) => setProfileForm((prev) => ({ ...prev, statut: value }))} />
                 <Pressable style={styles.primary} onPress={() => void saveProfile()}>
-                  <Text style={styles.primaryText}>Enregistrer</Text>
+                  <Text style={styles.primaryText}>{t("save")}</Text>
                 </Pressable>
               </>
             )}
@@ -968,12 +1105,12 @@ export default function App() {
 
     return (
       <>
-        <SectionTitle title="Parametres" subtitle="Configuration globale." />
-        <FormCard title="Parametres">
+        <SectionTitle title={t("settings")} subtitle={t("settingsSubtitle")} />
+        <FormCard title={t("settings")}>
           {parametres.map((item) => (
             <Field key={item.cle} label={item.cle} value={paramDrafts[item.cle] ?? item.valeur ?? ""} onChangeText={(value) => setParamDrafts((drafts) => ({ ...drafts, [item.cle]: value }))} placeholder={item.description ?? ""} />
           ))}
-          <Pressable style={styles.primary} onPress={() => void submitParametresMobile()}><Text style={styles.primaryText}>Enregistrer les parametres</Text></Pressable>
+          <Pressable style={styles.primary} onPress={() => void submitParametresMobile()}><Text style={styles.primaryText}>{t("saveSettings")}</Text></Pressable>
         </FormCard>
       </>
     );
@@ -982,18 +1119,18 @@ export default function App() {
   function TransactionFormCard({ type }: { type: "revenu" | "decaissement" }) {
     const categories = references.categories_transactions.filter((item) => item.nature === type);
     return (
-      <FormCard title={type === "revenu" ? "Nouveau versement" : "Nouvelle depense"}>
-        <ChoiceGroup label="Activite" items={references.activites} selected={transactionDraft.activite_id} onSelect={(value) => setTransactionDraft((draft) => ({ ...draft, activite_id: value }))} />
-        <ChoiceGroup label="Categorie" items={categories} selected={transactionDraft.categorie_id} onSelect={(value) => setTransactionDraft((draft) => ({ ...draft, categorie_id: value }))} />
+      <FormCard title={type === "revenu" ? t("newInstallment") : t("newExpense")}>
+        <ChoiceGroup label={t("activity")} items={references.activites} selected={transactionDraft.activite_id} onSelect={(value) => setTransactionDraft((draft) => ({ ...draft, activite_id: value }))} />
+        <ChoiceGroup label={t("category")} items={categories} selected={transactionDraft.categorie_id} onSelect={(value) => setTransactionDraft((draft) => ({ ...draft, categorie_id: value }))} />
         {type === "revenu" && (
-          <ChoiceGroup label="Echeance liee" items={echeances.map((item) => ({ id: item.id, nom: `${item.activite?.code ?? "Activite"} - ${item.debut_periode ? date(item.debut_periode) : "periode"}` }))} selected={transactionDraft.echeance_id} onSelect={(value) => setTransactionDraft((draft) => ({ ...draft, echeance_id: value }))} optional />
+          <ChoiceGroup label={t("linkedDeadline")} items={echeances.map((item) => ({ id: item.id, nom: `${item.activite?.code ?? t("activity")} - ${item.debut_periode ? date(item.debut_periode) : t("period")}` }))} selected={transactionDraft.echeance_id} onSelect={(value) => setTransactionDraft((draft) => ({ ...draft, echeance_id: value }))} optional />
         )}
-        <Field label="Montant" value={transactionDraft.montant} onChangeText={(value) => setTransactionDraft((draft) => ({ ...draft, montant: value }))} keyboardType="numeric" />
-        <Field label="Date" value={transactionDraft.date_transaction} onChangeText={(value) => setTransactionDraft((draft) => ({ ...draft, date_transaction: value }))} placeholder="YYYY-MM-DD" />
-        <ChoiceGroup label="Paiement" items={paymentOptions} selected={transactionDraft.mode_paiement} onSelect={(value) => setTransactionDraft((draft) => ({ ...draft, mode_paiement: value }))} />
-        <Field label="Note / reference recu" value={transactionDraft.note} onChangeText={(value) => setTransactionDraft((draft) => ({ ...draft, note: value }))} multiline />
+        <Field label={t("amount")} value={transactionDraft.montant} onChangeText={(value) => setTransactionDraft((draft) => ({ ...draft, montant: value }))} keyboardType="numeric" />
+        <Field label={t("date")} value={transactionDraft.date_transaction} onChangeText={(value) => setTransactionDraft((draft) => ({ ...draft, date_transaction: value }))} placeholder="YYYY-MM-DD" />
+        <ChoiceGroup label={t("payment")} items={paymentOptions} selected={transactionDraft.mode_paiement} onSelect={(value) => setTransactionDraft((draft) => ({ ...draft, mode_paiement: value }))} />
+        <Field label={t("noteReceipt")} value={transactionDraft.note} onChangeText={(value) => setTransactionDraft((draft) => ({ ...draft, note: value }))} multiline />
         <Pressable style={styles.primary} onPress={() => void submitTransactionRapide(type)}>
-          <Text style={styles.primaryText}>{type === "revenu" ? "Enregistrer le versement" : "Enregistrer la depense"}</Text>
+          <Text style={styles.primaryText}>{type === "revenu" ? t("saveInstallment") : t("saveExpense")}</Text>
         </Pressable>
       </FormCard>
     );
@@ -1003,8 +1140,8 @@ export default function App() {
     return (
       <View style={styles.card}>
         <Text style={styles.title}>{title}</Text>
-        <Text style={styles.muted}>{references.activites[0]?.nom ?? "Aucune activite"}</Text>
-        <TextInput style={styles.input} value={montant} onChangeText={setMontant} keyboardType="numeric" placeholder="Montant" />
+        <Text style={styles.muted}>{references.activites[0]?.nom ?? t("noActivities")}</Text>
+        <TextInput style={styles.input} value={montant} onChangeText={setMontant} keyboardType="numeric" placeholder={t("amount")} />
         <Pressable style={styles.primary} onPress={onSubmit}>
           <Text style={styles.primaryText}>{actionLabel}</Text>
         </Pressable>
@@ -1014,16 +1151,19 @@ export default function App() {
 }
 
 function Splash({ compact = false }: { compact?: boolean }) {
+  const { styles } = useAppTheme();
+  const { t } = useAppLocale();
   return (
     <View style={[styles.splash, compact && styles.splashCompact]}>
       <KoueSpinner compact={compact} />
       {!compact && <Text style={styles.brand}>KOUE MANAGER</Text>}
-      {!compact && <Text style={styles.muted}>Chargement...</Text>}
+      {!compact && <Text style={styles.muted}>{t("loading")}</Text>}
     </View>
   );
 }
 
 function FormCard({ title, children }: { title: string; children: React.ReactNode }) {
+  const { styles } = useAppTheme();
   return (
     <View style={styles.card}>
       <Text style={styles.title}>{title}</Text>
@@ -1033,6 +1173,7 @@ function FormCard({ title, children }: { title: string; children: React.ReactNod
 }
 
 function Field({ label, multiline = false, showPassword = false, onTogglePassword, secureTextEntry = false, ...props }: { label: string; multiline?: boolean; showPassword?: boolean; onTogglePassword?: () => void; secureTextEntry?: boolean } & ComponentProps<typeof TextInput>) {
+  const { styles, colors } = useAppTheme();
   return (
     <View style={styles.field}>
       <Text style={styles.inputLabel}>{label}</Text>
@@ -1042,7 +1183,7 @@ function Field({ label, multiline = false, showPassword = false, onTogglePasswor
             style={[styles.input, multiline && styles.inputMultiline, { flex: 1 }]}
             multiline={multiline}
             textAlignVertical={multiline ? "top" : "center"}
-            placeholderTextColor="#8a97aa"
+            placeholderTextColor={colors.muted}
             secureTextEntry={!showPassword}
             {...props}
           />
@@ -1055,7 +1196,7 @@ function Field({ label, multiline = false, showPassword = false, onTogglePasswor
           style={[styles.input, multiline && styles.inputMultiline]}
           multiline={multiline}
           textAlignVertical={multiline ? "top" : "center"}
-          placeholderTextColor="#8a97aa"
+          placeholderTextColor={colors.muted}
           secureTextEntry={secureTextEntry}
           {...props}
         />
@@ -1077,22 +1218,26 @@ function ChoiceGroup({
   onSelect: (value: string) => void;
   optional?: boolean;
 }) {
+  const { styles } = useAppTheme();
+  const { t } = useAppLocale();
   return (
     <View style={styles.field}>
       <Text style={styles.inputLabel}>{label}</Text>
       <View style={styles.choiceWrap}>
         {optional && (
           <Pressable style={[styles.choiceChip, !selected && styles.choiceChipActive]} onPress={() => onSelect("")}>
-            <Text style={[styles.choiceText, !selected && styles.choiceTextActive]}>Aucun</Text>
+            <Text style={[styles.choiceText, !selected && styles.choiceTextActive]}>{t("none")}</Text>
           </Pressable>
         )}
         {items.map((item) => {
           const value = String(item.id);
           const active = selected === value;
+          const translatedName = t(value);
+          const displayName = translatedName !== value ? translatedName : item.nom;
           return (
             <Pressable key={value} style={[styles.choiceChip, active && styles.choiceChipActive]} onPress={() => onSelect(value)}>
               <Text style={[styles.choiceText, active && styles.choiceTextActive]} numberOfLines={1}>
-                {item.code ? `${item.code} - ${item.nom}` : item.nom}
+                {item.code ? `${item.code} - ${displayName}` : displayName}
               </Text>
             </Pressable>
           );
@@ -1103,6 +1248,7 @@ function ChoiceGroup({
 }
 
 function KoueSpinner({ compact = false }: { compact?: boolean }) {
+  const { styles } = useAppTheme();
   const outer = useRef(new Animated.Value(0)).current;
   const inner = useRef(new Animated.Value(0)).current;
 
@@ -1152,6 +1298,7 @@ function KoueSpinner({ compact = false }: { compact?: boolean }) {
 }
 
 function SectionTitle({ title, subtitle }: { title: string; subtitle: string }) {
+  const { styles } = useAppTheme();
   return (
     <View style={styles.sectionTitle}>
       <Text style={styles.pageTitle}>{title}</Text>
@@ -1161,6 +1308,7 @@ function SectionTitle({ title, subtitle }: { title: string; subtitle: string }) 
 }
 
 function Stat({ label, value }: { label: string; value: string | number }) {
+  const { styles } = useAppTheme();
   return (
     <View style={styles.stat}>
       <Text style={styles.muted}>{label}</Text>
@@ -1170,6 +1318,7 @@ function Stat({ label, value }: { label: string; value: string | number }) {
 }
 
 function ListCard({ title, empty, children }: { title: string; empty: string; children: React.ReactNode }) {
+  const { styles } = useAppTheme();
   const items = Array.isArray(children) ? children.filter(Boolean) : children;
   const isEmpty = Array.isArray(items) ? items.length === 0 : !items;
   return (
@@ -1181,6 +1330,7 @@ function ListCard({ title, empty, children }: { title: string; empty: string; ch
 }
 
 function DataRow({ title, subtitle, value }: { title: string; subtitle: string; value: string | number }) {
+  const { styles } = useAppTheme();
   return (
     <View style={styles.row}>
       <View style={styles.rowText}>
@@ -1203,6 +1353,7 @@ function ActionRow({
   value: string | number;
   actions: Array<[string, () => void]>;
 }) {
+  const { styles } = useAppTheme();
   return (
     <View style={styles.actionRow}>
       <DataRow title={title} subtitle={subtitle} value={value} />
@@ -1218,6 +1369,7 @@ function ActionRow({
 }
 
 function LogoutIcon() {
+  const { styles } = useAppTheme();
   return (
     <View style={styles.logoutIcon} pointerEvents="none">
       <View style={styles.logoutDoor} />
@@ -1228,6 +1380,7 @@ function LogoutIcon() {
 }
 
 function SyncIcon() {
+  const { styles } = useAppTheme();
   return (
     <View style={styles.syncIcon} pointerEvents="none">
       {/* Arc superieur */}
@@ -1240,10 +1393,6 @@ function SyncIcon() {
       <View style={styles.syncArrowBottom} />
     </View>
   );
-}
-
-function currentRouteLabel(route: RouteKey) {
-  return routes.find(([key]) => key === route)?.[1] ?? "Tableau de bord";
 }
 
 function money(value?: string | number) {
@@ -1298,9 +1447,19 @@ const styles = StyleSheet.create({
   },
   headerLeft: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 12 },
   headerActions: { flexDirection: "row", alignItems: "center", gap: 8, position: "relative" },
+  logout: {
+    width: 32,
+    height: 32,
+    borderRadius: 7,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#ffebee",
+    borderWidth: 1,
+    borderColor: "#ffcdd2",
+  },
   syncBtn: {
-    width: 44,
-    height: 44,
+    width: 32,
+    height: 32,
     borderRadius: 7,
     alignItems: "center",
     justifyContent: "center",
@@ -1665,7 +1824,7 @@ const styles = StyleSheet.create({
   actionRow: { borderBottomWidth: 1, borderBottomColor: "#edf2f7", paddingBottom: 10, gap: 8 },
   actionRowButtons: { flexDirection: "row", gap: 8 },
   actionButton: { flex: 1, minHeight: 40 },
-  logout: { width: 44, height: 44, borderRadius: 7, alignItems: "center", justifyContent: "center", backgroundColor: "#eaf3ff" },
+
   logoutIcon: { position: "relative", width: 25, height: 25 },
   logoutDoor: {
     position: "absolute",

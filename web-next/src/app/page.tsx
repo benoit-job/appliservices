@@ -1,9 +1,13 @@
 "use client";
 
 import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
+import Swal from "sweetalert2";
+import { type Language, getTranslation } from "./translations";
 import { ChartGrid } from "../components/ChartPanel";
 import { ChartFiltersBar, defaultChartFilters, filtersToQuery } from "../components/ChartFilters";
 import type { ChartFilters, Graphique } from "../types/charts";
+import { ThemePicker } from "../components/ThemePicker";
+import { applyTheme, DEFAULT_THEME_ID, THEME_STORAGE_KEY, themes, type ThemeId } from "./themes";
 
 
 type ApiResponse<T> = T & { statut: "ok" | "erreur"; message?: string };
@@ -24,19 +28,19 @@ type Named = { id: number; nom: string };
 type References = { types_activites: TypeActivite[]; categories_transactions: Array<Named & { nature: string }>; activites: Array<Named & { code: string }>; utilisateurs: User[]; roles: Role[] };
 
 const routes = [
-  ["tableau-bord", "Tableau de bord", "▦"],
-  ["vue-ensemble", "Vue d'ensemble", "◫"],
-  ["activites", "Activités", "▣"],
-  ["versements", "Versements", "◉"],
-  ["depenses", "Dépenses", "◍"],
-  ["inventaire", "Inventaire", "▤"],
-  ["rapports", "Rapports", "▥"],
-  ["types-activites", "Types d'activités", "◧"],
-  ["utilisateurs", "Utilisateurs", "◎"],
-  ["notifications", "Notifications", "◌"],
-  ["audit", "Journal d'audit", "◷"],
-  ["infos", "Infos", "ℹ"],
-  ["parametres", "Paramètres", "⚙"],
+  ["tableau-bord", "dashboard", "▦"],
+  ["vue-ensemble", "overview", "◫"],
+  ["activites", "activities", "▣"],
+  ["versements", "installments", "◉"],
+  ["depenses", "expenses", "◍"],
+  ["inventaire", "inventory", "▤"],
+  ["rapports", "reports", "▥"],
+  ["types-activites", "typeActivities", "◧"],
+  ["utilisateurs", "users", "◎"],
+  ["notifications", "notifications", "◌"],
+  ["audit", "audit", "◷"],
+  ["infos", "infos", "ℹ"],
+  ["parametres", "settings", "⚙"],
 ] as const;
 
 export default function Home() {
@@ -70,6 +74,14 @@ export default function Home() {
   const [parametres, setParametres] = useState<Parametre[]>([]);
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [showUserPassword, setShowUserPassword] = useState(false);
+  
+  const [lang, setLang] = useState<Language>("fr");
+  const [langMenuOpen, setLangMenuOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [notifPopupOpen, setNotifPopupOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  const t = (key: Parameters<typeof getTranslation>[1]) => getTranslation(lang, key);
 
   const api = useMemo(() => {
     return async <T,>(path: string, options: RequestInit = {}) => {
@@ -85,9 +97,16 @@ export default function Home() {
   }, [token]);
 
   useEffect(() => {
+    setMounted(true);
     queueMicrotask(() => {
       const savedToken = localStorage.getItem("koue_token");
       const savedUser = localStorage.getItem("koue_user");
+      const savedLang = localStorage.getItem("koue_lang") as Language | null;
+      if (savedLang) setLang(savedLang);
+      // Restore saved theme on mount
+      const savedTheme = localStorage.getItem(THEME_STORAGE_KEY) as ThemeId | null;
+      const themeId = savedTheme && themes.some((theme) => theme.id === savedTheme) ? savedTheme : DEFAULT_THEME_ID;
+      applyTheme(themeId);
       if (savedToken && savedUser) {
         setToken(savedToken);
         setUser(JSON.parse(savedUser));
@@ -211,6 +230,26 @@ export default function Home() {
       setRoute("tableau-bord");
       setMobileMenuOpen(false);
       setSidebarCollapsed(false);
+    }
+  }
+
+  async function handleLogout() {
+    setUserMenuOpen(false);
+    const result = await Swal.fire({
+      title: t("logoutConfirmTitle") as string || "Confirmation",
+      text: t("logoutConfirmText") as string || "Voulez-vous vraiment vous déconnecter ?",
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: 'var(--red)',
+      cancelButtonColor: 'var(--muted)',
+      confirmButtonText: t("logout") as string || 'Déconnexion',
+      cancelButtonText: t("cancel") as string || 'Annuler',
+      background: 'var(--surface)',
+      color: 'var(--text)'
+    });
+    
+    if (result.isConfirmed) {
+      logout();
     }
   }
 
@@ -385,6 +424,8 @@ export default function Home() {
     await chargerRoute("versements");
   }
 
+  if (!mounted) return null;
+
   if (!token || !user) {
     return (
       <>
@@ -430,6 +471,7 @@ export default function Home() {
             </form>
           </section>
         </main>
+        <ThemePicker t={t} />
       </>
     );
   }
@@ -449,11 +491,11 @@ export default function Home() {
                     return;
                   }
                   openRoute(key);
-                }} title={label} aria-label={label} aria-expanded={key === "infos" ? infoMenuOpen : undefined}><span>{icon}</span>{label}</button>
+                }} title={t(label)} aria-label={t(label)} aria-expanded={key === "infos" ? infoMenuOpen : undefined}><span>{icon}</span>{t(label as any)}</button>
                 {key === "infos" && infoMenuOpen && (
                   <div className="subnav" role="menu" aria-label="Sous-menu Infos">
-                    <button type="button" className={route === "info-plateforme" ? "active" : ""} onClick={() => { setRoute("info-plateforme"); setInfoMenuOpen(false); }}>Plateforme</button>
-                    <button type="button" className={route === "info-compte" ? "active" : ""} onClick={() => { setRoute("info-compte"); setInfoMenuOpen(false); }}>Mon compte</button>
+                    <button type="button" className={route === "info-plateforme" ? "active" : ""} onClick={() => { setRoute("info-plateforme"); setInfoMenuOpen(false); }}>{t("platform")}</button>
+                    <button type="button" className={route === "info-compte" ? "active" : ""} onClick={() => { setRoute("info-compte"); setInfoMenuOpen(false); }}>{t("myAccount")}</button>
                   </div>
                 )}
               </div>
@@ -467,36 +509,76 @@ export default function Home() {
             <button className="icon-button menu-button" type="button" onClick={toggleNavigation} aria-label="Ouvrir ou fermer le menu" aria-expanded={mobileMenuOpen || !sidebarCollapsed}>☰</button>
             <label className="search">⌕<input placeholder="Search in Koue Manager" /></label>
             <div className="top-actions">
-              <span className="badge-dot">{routes.length}</span><button className="icon-button" type="button" onClick={() => openRoute("vue-ensemble")} title="Vue d'ensemble">▦</button><span className="flag">FR</span><button className="icon-button" type="button" title="Mode clair">☼</button><button className="badge-dot red" type="button" onClick={() => openRoute("notifications")} title="Notifications">{notifications.filter((item) => !item.lu).length}</button>
-              <button className="logout-icon-button" onClick={logout} title="Déconnexion" aria-label="Déconnexion"><span className="logout-icon" aria-hidden="true" /></button>
+              <button className="icon-button" type="button" onClick={() => { if (!document.fullscreenElement) void document.documentElement.requestFullscreen(); else void document.exitFullscreen(); }} title="Plein écran">▦</button>
+              
+              <div style={{ position: "relative" }}>
+                <span className="flag" onClick={() => setLangMenuOpen(!langMenuOpen)} style={{ cursor: "pointer", fontSize: 18 }}>{lang === "fr" ? "🇫🇷" : lang === "en" ? "🇬🇧" : "🇪🇸"}</span>
+                {langMenuOpen && (
+                  <div className="dropdown-menu" style={{ position: "absolute", top: 35, right: 0, width: 120, background: "#1c2128", border: "1px solid #30363d", borderRadius: 8, padding: 8, zIndex: 1000, display: "flex", flexDirection: "column", gap: 5 }}>
+                    <button className="btn secondary" onClick={() => { setLang("fr"); localStorage.setItem("koue_lang", "fr"); setLangMenuOpen(false); }}>🇫🇷 Français</button>
+                    <button className="btn secondary" onClick={() => { setLang("en"); localStorage.setItem("koue_lang", "en"); setLangMenuOpen(false); }}>🇬🇧 English</button>
+                    <button className="btn secondary" onClick={() => { setLang("es"); localStorage.setItem("koue_lang", "es"); setLangMenuOpen(false); }}>🇪🇸 Español</button>
+                  </div>
+                )}
+              </div>
+              
+              <div style={{ position: "relative" }}>
+                <button className="badge-dot red" type="button" onClick={() => setNotifPopupOpen(!notifPopupOpen)} title="Notifications">{notifications.filter((item) => !item.lu).length}</button>
+                {notifPopupOpen && (
+                  <div className="dropdown-menu" style={{ position: "absolute", top: 35, right: 0, width: 300, background: "#1c2128", border: "1px solid #30363d", borderRadius: 8, padding: 15, zIndex: 1000, display: "flex", flexDirection: "column", gap: 10, boxShadow: "0 10px 25px rgba(0,0,0,0.5)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <h4 style={{ margin: 0, color: "#e6edf3", fontSize: 14 }}>{t("notifications")}</h4>
+                    </div>
+                    {notifications.length === 0 ? (
+                      <p style={{ color: "#8b949e", fontSize: 13, margin: 0 }}>{t("noNotifications")}</p>
+                    ) : (
+                      <p style={{ color: "#8b949e", fontSize: 13, margin: 0 }}>Vous avez {notifications.length} notification(s).</p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div style={{ position: "relative" }}>
+                <button className="icon-button" type="button" onClick={() => setUserMenuOpen(!userMenuOpen)} title={t("myAccount")}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: "block" }}><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                </button>
+                {userMenuOpen && (
+                  <div className="dropdown-menu" style={{ position: "absolute", top: 35, right: 0, width: 160, background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 8, padding: 8, zIndex: 1000, display: "flex", flexDirection: "column", gap: 5, boxShadow: "0 10px 25px rgba(0,0,0,0.5)" }}>
+                    <button className="btn secondary" onClick={() => { setRoute("info-compte"); setUserMenuOpen(false); }}>{t("myAccount")}</button>
+                    <button className="btn secondary" style={{ color: "var(--red)", borderColor: "var(--red)" }} onClick={handleLogout}>{t("logout")}</button>
+                  </div>
+                )}
+              </div>
             </div>
           </header>
           <section className="content">{renderRoute()}</section>
         </section>
       </main>
+      <ThemePicker t={t} />
     </>
   );
 
   function renderRoute() {
+    if (!user) return null;
     const resume = dashboard.resume;
 
     if (route === "tableau-bord") {
       return <>
-        <PageTitle title="Tableau de bord" subtitle="Vue consolidée des activités, versements, dépenses et inventaire." />
+        <PageTitle title={t("dashboard")} subtitle={t("dashboardSubtitle")} />
         <div className="cards">
-          <Card label="Activités" value={resume?.activites ?? 0} />
-          <Card label="Revenus" value={money(resume?.revenus)} />
-          <Card label="Dépenses" value={money(resume?.decaissements)} />
-          <Card label="Résultat" value={money(resume?.resultat)} />
-          <Card label="Inventaire" value={money(resume?.inventaire)} />
+          <Card label={t("activitiesCount")} value={resume?.activites ?? 0} />
+          <Card label={t("income")} value={money(resume?.revenus)} />
+          <Card label={t("decaissements")} value={money(resume?.decaissements)} />
+          <Card label={t("result")} value={money(resume?.resultat)} />
+          <Card label={t("inventoryValue")} value={money(resume?.inventaire)} />
         </div>
         <ChartGrid graphiques={dashboard.graphiques ?? []} compact />
         <Grid>
-          <Panel title="Activités récentes">
-            <Table heads={["Code", "Activité", "Type", "Versement", "Statut"]} rows={(dashboard.activites ?? []).map((a) => [a.code, a.nom, a.type_activite?.nom ?? "-", money(a.montant_versement), pill(a.statut)])} />
+          <Panel title={t("recentActivities")}>
+            <Table heads={["Code", t("activities"), "Type", t("installments"), "Statut"]} rows={(dashboard.activites ?? []).map((a) => [a.code, a.nom, a.type_activite?.nom ?? "-", money(a.montant_versement), pill(a.statut)])} />
           </Panel>
-          <Panel title="Échéances">
-            <Table heads={["Activité", "Période", "Attendu", "Payé", "Statut"]} rows={(dashboard.echeances ?? []).map((e) => [e.activite?.code ?? "-", `${date(e.debut_periode)} - ${date(e.fin_periode)}`, money(e.montant_attendu), money(e.montant_paye), pill(e.statut)])} />
+          <Panel title={t("recentDeadlines")}>
+            <Table heads={[t("activities"), "Période", "Attendu", "Payé", "Statut"]} rows={(dashboard.echeances ?? []).map((e) => [e.activite?.code ?? "-", `${date(e.debut_periode)} - ${date(e.fin_periode)}`, money(e.montant_attendu), money(e.montant_paye), pill(e.statut)])} />
           </Panel>
         </Grid>
       </>;
@@ -504,17 +586,17 @@ export default function Home() {
 
     if (route === "vue-ensemble") {
       return <>
-        <PageTitle title="Vue d'ensemble" subtitle="Tous les graphiques et indicateurs avec filtres précis." />
-        <ChartFiltersBar filters={chartFiltersDraft} activites={refs.activites} onChange={setChartFiltersDraft} onApply={() => void appliquerFiltresGraphiques()} />
+        <PageTitle title={t("overview")} subtitle={t("overviewDesc")} />
+        <ChartFiltersBar filters={chartFiltersDraft} activites={refs.activites} onChange={setChartFiltersDraft} onApply={() => void appliquerFiltresGraphiques()} t={t} />
         <ChartGrid graphiques={vueEnsemble} />
       </>;
     }
 
     if (route === "activites") {
       return <>
-        <PageTitle title="Activités" subtitle="Créez tout nouveau business sans modifier le schéma." />
+        <PageTitle title={t("activities")} subtitle={t("activitiesSubtitle")} />
         <Grid>
-          <Panel title="Nouvelle activité">
+          <Panel title={t("newActivity") ?? "Nouvelle activité"}>
             <form className="form compact" onSubmit={submitActivite}>
               <Select name="type_activite_id" label="Type" items={refs.types_activites} />
               <Select name="gerant_utilisateur_id" label="Gérant assigné" items={refs.utilisateurs} optional />
@@ -527,8 +609,8 @@ export default function Home() {
               <button className="btn primary">Enregistrer</button>
             </form>
           </Panel>
-          <Panel title="Liste">
-            <Table heads={["Code", "Nom", "Type", "Gérant", "Versement", "Statut"]} rows={activites.map((a) => [a.code, a.nom, a.type_activite?.nom ?? "-", a.gerant?.nom ?? "-", money(a.montant_versement), pill(a.statut)])} />
+          <Panel title={t("activitiesList") ?? "Liste"}>
+            <Table heads={["Code", "Nom", "Type", "Gérant", t("installments"), "Statut"]} rows={activites.map((a) => [a.code, a.nom, a.type_activite?.nom ?? "-", a.gerant?.nom ?? "-", money(a.montant_versement), pill(a.statut)])} />
           </Panel>
         </Grid>
       </>;
@@ -536,7 +618,7 @@ export default function Home() {
 
     if (route === "versements") {
       return <>
-        <PageTitle title="Versements" subtitle="Générez les échéances et saisissez les paiements." action={<button className="btn gold" onClick={genererEcheances}>Générer la semaine</button>} />
+        <PageTitle title={t("installments")} subtitle={t("installmentsSubtitle")} action={<button className="btn gold" onClick={genererEcheances}>Générer la semaine</button>} />
         <Grid>
           <Panel title="Nouveau versement">
             <form className="form compact" onSubmit={(e) => submitTransaction(e, "revenu")}>
@@ -551,8 +633,8 @@ export default function Home() {
               <button className="btn primary">Enregistrer</button>
             </form>
           </Panel>
-          <Panel title="Échéances">
-            <Table heads={["Activité", "Période", "Attendu", "Payé", "Statut"]} rows={echeances.map((e) => [e.activite?.nom ?? "-", `${date(e.debut_periode)} - ${date(e.fin_periode)}`, money(e.montant_attendu), money(e.montant_paye), pill(e.statut)])} />
+          <Panel title={t("deadlines")}>
+            <Table heads={[t("activities"), "Période", "Attendu", "Payé", "Statut"]} rows={echeances.map((e) => [e.activite?.nom ?? "-", `${date(e.debut_periode)} - ${date(e.fin_periode)}`, money(e.montant_attendu), money(e.montant_paye), pill(e.statut)])} />
           </Panel>
         </Grid>
       </>;
@@ -560,7 +642,7 @@ export default function Home() {
 
     if (route === "depenses") {
       return <>
-        <PageTitle title="Dépenses" subtitle="Décaissements, carburant, réparations, aliments, salaires." />
+        <PageTitle title={t("expenses")} subtitle={t("expensesSubtitle")} />
         <Grid>
           <Panel title="Nouvelle dépense">
             <form className="form compact" onSubmit={(e) => submitTransaction(e, "decaissement")}>
@@ -574,8 +656,8 @@ export default function Home() {
               <button className="btn primary">Enregistrer</button>
             </form>
           </Panel>
-          <Panel title="Historique et validation">
-            <Table heads={["Date", "Activité", "Catégorie", "Montant", "Statut", "Actions"]} rows={transactions.map((t) => [date(t.date_transaction), t.activite?.nom ?? "-", t.categorie?.nom ?? "-", money(t.montant), pill(t.statut_validation ?? "valide"), t.statut_validation === "en_attente" ? <ActionGroup key={t.id}><button onClick={() => void validerTransaction(t.id, "valide")}>Valider</button><button onClick={() => void validerTransaction(t.id, "rejete")}>Rejeter</button></ActionGroup> : t.mode_paiement])} />
+          <Panel title={t("history")}>
+            <Table heads={["Date", t("activities"), "Catégorie", "Montant", "Statut", "Actions"]} rows={transactions.map((trx) => [date(trx.date_transaction), trx.activite?.nom ?? "-", trx.categorie?.nom ?? "-", money(trx.montant), pill(trx.statut_validation ?? "valide"), trx.statut_validation === "en_attente" ? <ActionGroup key={trx.id}><button onClick={() => void validerTransaction(trx.id, "valide")}>Valider</button><button onClick={() => void validerTransaction(trx.id, "rejete")}>Rejeter</button></ActionGroup> : trx.mode_paiement])} />
           </Panel>
         </Grid>
       </>;
@@ -583,9 +665,9 @@ export default function Home() {
 
     if (route === "inventaire") {
       return <>
-        <PageTitle title="Inventaire" subtitle="Biens durables, stocks consommables, cheptel et mouvements tracés." />
+        <PageTitle title={t("inventory")} subtitle={t("inventorySubtitle")} />
         <Grid>
-          <Panel title="Nouvel article">
+          <Panel title={t("newArticle") ?? "Nouvel article"}>
             <form className="form compact" onSubmit={submitArticle}>
               <Select name="activite_id" label="Activité" items={refs.activites} />
               <input name="nom" placeholder="Nom" required />
@@ -597,7 +679,7 @@ export default function Home() {
               <button className="btn primary">Enregistrer</button>
             </form>
           </Panel>
-          <Panel title="Mouvement de stock">
+          <Panel title={t("stockMovement") ?? "Mouvement de stock"}>
             <form className="form compact" onSubmit={submitMouvementArticle}>
               <Select name="article_id" label="Article" items={articles} />
               <select name="type_mouvement"><option value="entree">Entrée</option><option value="sortie">Sortie</option><option value="ajustement">Ajustement</option></select>
@@ -608,36 +690,36 @@ export default function Home() {
             </form>
           </Panel>
         </Grid>
-        <Panel title="Articles">
-          <Table heads={["Activité", "Article", "Type", "Quantité", "Seuil", "Valeur"]} rows={articles.map((a) => [a.activite?.nom ?? "-", a.nom, pill(a.type_article), `${a.quantite} ${a.unite}`, a.seuil_alerte ?? "-", money(Number(a.quantite) * Number(a.valeur_unitaire))])} />
+        <Panel title={t("articles")}>
+          <Table heads={[t("activities"), "Article", "Type", "Quantité", "Seuil", "Valeur"]} rows={articles.map((a) => [a.activite?.nom ?? "-", a.nom, pill(a.type_article), `${a.quantite} ${a.unite}`, a.seuil_alerte ?? "-", money(Number(a.quantite) * Number(a.valeur_unitaire))])} />
         </Panel>
       </>;
     }
 
     if (route === "rapports") {
       return <>
-        <PageTitle title="Rapports" subtitle="Bilan consolidé par activité sur une période." action={<button className="btn gold" onClick={() => void figerRapport()}>Figer le rapport</button>} />
+        <PageTitle title={t("reports")} subtitle={t("reportsSubtitle")} action={<button className="btn gold" onClick={() => void figerRapport()}>{t("freeze")}</button>} />
         <form className="filter-row" onSubmit={filtrerRapport}>
           <input name="debut" type="date" defaultValue={rapport?.periode?.debut ?? new Date().toISOString().slice(0, 10)} />
           <input name="fin" type="date" defaultValue={rapport?.periode?.fin ?? new Date().toISOString().slice(0, 10)} />
-          <button className="btn primary">Filtrer</button>
+          <button className="btn primary">{t("filter")}</button>
         </form>
         <div className="cards">
-          <Card label="Revenus" value={money(rapport?.totaux?.revenus)} />
-          <Card label="Dépenses" value={money(rapport?.totaux?.decaissements)} />
-          <Card label="Résultat" value={money(rapport?.totaux?.resultat)} />
+          <Card label={t("income")} value={money(rapport?.totaux?.revenus)} />
+          <Card label={t("decaissements")} value={money(rapport?.totaux?.decaissements)} />
+          <Card label={t("result")} value={money(rapport?.totaux?.resultat)} />
         </div>
-        <Panel title="Détail par activité">
-          <Table heads={["Code", "Activité", "Type", "Revenus", "Dépenses", "Résultat"]} rows={(rapport?.activites ?? []).map((a) => [a.code, a.nom, a.type_activite ?? "-", money(a.revenus), money(a.decaissements), money(a.resultat)])} />
+        <Panel title={t("byActivity")}>
+          <Table heads={["Code", t("activities"), "Type", t("income"), t("decaissements"), t("result")]} rows={(rapport?.activites ?? []).map((a) => [a.code, a.nom, a.type_activite ?? "-", money(a.revenus), money(a.decaissements), money(a.resultat)])} />
         </Panel>
       </>;
     }
 
     if (route === "types-activites") {
       return <>
-        <PageTitle title="Types d'activités" subtitle="Configurez les futurs business sans modifier le code." />
+        <PageTitle title={t("typeActivities")} subtitle={t("typeActivitiesSubtitle")} />
         <Grid>
-          <Panel title="Nouveau type">
+          <Panel title={t("newType") ?? "Nouveau type"}>
             <form className="form compact" onSubmit={submitTypeActivite}>
               <input name="nom" placeholder="Nom du type" required />
               <input name="slug" placeholder="Slug optionnel" />
@@ -649,7 +731,7 @@ export default function Home() {
               <button className="btn primary">Enregistrer</button>
             </form>
           </Panel>
-          <Panel title="Types configurés">
+          <Panel title={t("configuredTypes") ?? "Types configurés"}>
             <Table heads={["Type", "Fréquence", "Versement", "Activités", "Statut"]} rows={typesActivites.map((t) => [t.nom, t.frequence_versement, t.a_versement_recurrent ? "Oui" : "Non", t.activites_count ?? 0, pill(t.actif ? "actif" : "inactif")])} />
           </Panel>
         </Grid>
@@ -658,9 +740,9 @@ export default function Home() {
 
     if (route === "utilisateurs") {
       return <>
-        <PageTitle title="Utilisateurs" subtitle="Comptes web et mobile avec rôles opérationnels." />
+        <PageTitle title={t("users")} subtitle={t("usersSubtitle")} />
         <Grid>
-          <Panel title="Nouvel utilisateur">
+          <Panel title={t("newUser") ?? "Nouvel utilisateur"}>
             <form className="form compact" onSubmit={submitUtilisateur}>
               <Select name="role_id" label="Rôle" items={refs.roles} />
               <input name="nom" placeholder="Nom complet" required />
@@ -742,8 +824,8 @@ export default function Home() {
             <div className="info-list">
               <div><label>Entreprise</label><span>KOUECONSOLIDATED</span></div>
               <div><label>Compte</label><span>{user.role?.nom ?? "Utilisateur"}</span></div>
-              <div><label>Utilisateurs</label><span>{plateforme.limite_utilisateurs ? `${(user.plateforme as any)?.utilisateurs_count ?? 0} / ${plateforme.limite_utilisateurs}` : "-"}</span></div>
-              <div><label>Activités</label><span>{plateforme.limite_activites ? `${(user.plateforme as any)?.activites_count ?? 0} / ${plateforme.limite_activites}` : "-"}</span></div>
+              <div><label>Utilisateurs</label><span>{plateforme.limite_utilisateurs ? `${(user.plateforme as { utilisateurs_count?: number })?.utilisateurs_count ?? 0} / ${plateforme.limite_utilisateurs}` : "-"}</span></div>
+              <div><label>Activités</label><span>{plateforme.limite_activites ? `${(user.plateforme as { activites_count?: number })?.activites_count ?? 0} / ${plateforme.limite_activites}` : "-"}</span></div>
             </div>
           </Panel>
         </div>
