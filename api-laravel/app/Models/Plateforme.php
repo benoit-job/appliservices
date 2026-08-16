@@ -19,6 +19,7 @@ class Plateforme extends Model
         'statut',
         'limite_utilisateurs',
         'limite_activites',
+        'image_url',
         'options',
     ];
 

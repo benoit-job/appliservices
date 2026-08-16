@@ -28,6 +28,7 @@ class PlatformScopedCountFiltersTest extends TestCase
             $table->id();
             $table->string('nom');
             $table->string('slug')->unique();
+            $table->string('image_url')->nullable();
             $table->timestamps();
             $table->softDeletes();
         });
@@ -113,5 +114,16 @@ class PlatformScopedCountFiltersTest extends TestCase
 
         $this->assertCount(1, $data['donnees']);
         $this->assertSame($plateformeA->id, $data['donnees'][0]['plateforme_id']);
+    }
+
+    public function test_plateforme_image_url_is_persisted(): void
+    {
+        $plateforme = Plateforme::create([
+            'nom' => 'Plateforme image',
+            'slug' => 'plateforme-image',
+            'image_url' => '/storage/plateformes/logo.png',
+        ]);
+
+        $this->assertSame('/storage/plateformes/logo.png', $plateforme->fresh()->image_url);
     }
 }

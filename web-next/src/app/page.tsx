@@ -8,7 +8,7 @@ import type { ChartFilters, Graphique } from "../types/charts";
 
 type ApiResponse<T> = T & { statut: "ok" | "erreur"; message?: string };
 type Role = { id: number; nom: string; slug?: string };
-type User = { id: number; role_id?: number; nom: string; email: string; telephone?: string; statut?: string; derniere_connexion?: string; role?: { nom: string } };
+type User = { id: number; role_id?: number; nom: string; email: string; telephone?: string; statut?: string; derniere_connexion?: string; role?: { nom: string }; plateforme?: { id?: number; nom?: string; slug?: string; email_contact?: string; telephone_contact?: string; adresse?: string; image_url?: string | null; statut?: string; limite_utilisateurs?: number; limite_activites?: number } };
 type Resume = { activites: number; revenus: number; decaissements: number; resultat: number; retards: number; inventaire: number };
 type TypeActivite = { id: number; nom: string; slug: string; a_versement_recurrent: boolean; frequence_versement: string; schema_champs?: Record<string, string> | null; icone?: string; couleur?: string; actif: boolean; activites_count?: number };
 type Activite = { id: number; type_activite_id?: number; nom: string; code: string; statut: string; montant_versement: string | number; attributs?: Record<string, unknown>; type_activite?: { nom: string; couleur?: string }; gerant?: { nom: string; email: string } };
@@ -35,6 +35,7 @@ const routes = [
   ["utilisateurs", "Utilisateurs", "◎"],
   ["notifications", "Notifications", "◌"],
   ["audit", "Journal d'audit", "◷"],
+  ["infos", "Infos", "ℹ"],
   ["parametres", "Paramètres", "⚙"],
 ] as const;
 
@@ -43,6 +44,11 @@ export default function Home() {
   const [user, setUser] = useState<User | null>(null);
   const [route, setRoute] = useState("tableau-bord");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [infoMenuOpen, setInfoMenuOpen] = useState(false);
+  const [editingProfile, setEditingProfile] = useState(false);
+  const [editingPlatform, setEditingPlatform] = useState(false);
+  const [profileForm, setProfileForm] = useState({ nom: "", email: "", telephone: "", statut: "actif" });
+  const [platformForm, setPlatformForm] = useState({ nom: "", slug: "", email_contact: "", telephone_contact: "", adresse: "" });
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [progress, setProgress] = useState(0);
@@ -62,6 +68,8 @@ export default function Home() {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [parametres, setParametres] = useState<Parametre[]>([]);
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [showUserPassword, setShowUserPassword] = useState(false);
 
   const api = useMemo(() => {
     return async <T,>(path: string, options: RequestInit = {}) => {
@@ -91,6 +99,24 @@ export default function Home() {
   useEffect(() => {
     if (token) void chargerBase();
   }, [token]);
+
+  useEffect(() => {
+    if (user) {
+      setProfileForm({
+        nom: user.nom ?? "",
+        email: user.email ?? "",
+        telephone: user.telephone ?? "",
+        statut: user.statut ?? "actif",
+      });
+      setPlatformForm({
+        nom: user.plateforme?.nom ?? "",
+        slug: user.plateforme?.slug ?? "",
+        email_contact: user.plateforme?.email_contact ?? "",
+        telephone_contact: user.plateforme?.telephone_contact ?? "",
+        adresse: user.plateforme?.adresse ?? "",
+      });
+    }
+  }, [user]);
 
   useEffect(() => {
     if (token) void chargerRoute(route);
@@ -188,6 +214,45 @@ export default function Home() {
     }
   }
 
+  async function saveProfile() {
+    if (!user) return;
+
+    const payload = {
+      nom: profileForm.nom,
+      email: profileForm.email,
+      telephone: profileForm.telephone,
+      statut: profileForm.statut || "actif",
+      role_id: user.role_id ?? undefined,
+    };
+
+    await api(`utilisateurs/${user.id}`, { method: "PUT", body: JSON.stringify(payload) });
+    const response = await api<{ utilisateur: User }>("moi");
+    localStorage.setItem("koue_user", JSON.stringify(response.utilisateur));
+    setUser(response.utilisateur);
+    setEditingProfile(false);
+  }
+
+  async function savePlatform() {
+    if (!user?.plateforme?.id) return;
+
+    const payload = {
+      nom: platformForm.nom,
+      slug: platformForm.slug,
+      email_contact: platformForm.email_contact,
+      telephone_contact: platformForm.telephone_contact,
+      adresse: platformForm.adresse,
+      statut: user.plateforme.statut ?? "actif",
+      limite_utilisateurs: user.plateforme.limite_utilisateurs ?? 10,
+      limite_activites: user.plateforme.limite_activites ?? 25,
+    };
+
+    await api(`plateformes/${user.plateforme.id}`, { method: "PUT", body: JSON.stringify(payload) });
+    const response = await api<{ utilisateur: User }>("moi");
+    localStorage.setItem("koue_user", JSON.stringify(response.utilisateur));
+    setUser(response.utilisateur);
+    setEditingPlatform(false);
+  }
+
   function toggleNavigation() {
     if (window.matchMedia("(max-width: 760px)").matches) {
       setMobileMenuOpen((open) => !open);
@@ -199,6 +264,7 @@ export default function Home() {
 
   function openRoute(nextRoute: string) {
     setRoute(nextRoute);
+    setInfoMenuOpen(false);
     setMobileMenuOpen(false);
   }
 
@@ -349,11 +415,12 @@ export default function Home() {
               {error && <div className="alert">{error}</div>}
               <label>
                 Adresse email
-                <input name="email" type="email" defaultValue="admin@kouemanager.local" autoComplete="email" required />
+                <input name="identifiant" type="email" defaultValue="admin@kouemanager.local" autoComplete="email" required />
               </label>
-              <label>
+              <label style={{ position: "relative" }}>
                 Mot de passe
-                <input name="mot_de_passe" type="password" defaultValue="Admin@1234" autoComplete="current-password" required />
+                <input name="mot_de_passe" type={showLoginPassword ? "text" : "password"} defaultValue="Admin@1234" autoComplete="current-password" required />
+                <button type="button" className="password-toggle" onClick={() => setShowLoginPassword(!showLoginPassword)} aria-label={showLoginPassword ? "Masquer le mot de passe" : "Afficher le mot de passe"}>{showLoginPassword ? "🙈" : "👁️"}</button>
               </label>
               <button className="btn primary login-submit" type="submit">Se connecter</button>
               <div className="login-footnote">
@@ -373,7 +440,25 @@ export default function Home() {
       <main className={`app-shell ${sidebarCollapsed ? "sidebar-collapsed" : ""} ${mobileMenuOpen ? "mobile-menu-open" : ""}`}>
         <aside className="sidebar">
           <div className="brand"><img src="/logo-koue.svg" alt="" /><strong>KOUE</strong></div>
-          <nav>{routes.map(([key, label, icon]) => <button key={key} className={route === key ? "active" : ""} onClick={() => openRoute(key)} title={label} aria-label={label}><span>{icon}</span>{label}</button>)}</nav>
+          <nav>
+            {routes.map(([key, label, icon]) => (
+              <div key={key} className={key === "infos" ? "nav-item-with-popover" : undefined}>
+                <button className={route === key ? "active" : ""} onClick={() => {
+                  if (key === "infos") {
+                    setInfoMenuOpen((value) => !value);
+                    return;
+                  }
+                  openRoute(key);
+                }} title={label} aria-label={label} aria-expanded={key === "infos" ? infoMenuOpen : undefined}><span>{icon}</span>{label}</button>
+                {key === "infos" && infoMenuOpen && (
+                  <div className="subnav" role="menu" aria-label="Sous-menu Infos">
+                    <button type="button" className={route === "info-plateforme" ? "active" : ""} onClick={() => { setRoute("info-plateforme"); setInfoMenuOpen(false); }}>Plateforme</button>
+                    <button type="button" className={route === "info-compte" ? "active" : ""} onClick={() => { setRoute("info-compte"); setInfoMenuOpen(false); }}>Mon compte</button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </nav>
           <small>KOUECONSOLIDATED<br />Groupe multi-activités</small>
         </aside>
         <button className="sidebar-backdrop" type="button" aria-label="Fermer le menu" onClick={() => setMobileMenuOpen(false)} />
@@ -580,7 +665,10 @@ export default function Home() {
               <Select name="role_id" label="Rôle" items={refs.roles} />
               <input name="nom" placeholder="Nom complet" required />
               <input name="email" type="email" placeholder="Email" required />
-              <input name="mot_de_passe" type="password" placeholder="Mot de passe" required />
+              <div style={{ position: "relative" }}>
+                <input name="mot_de_passe" type={showUserPassword ? "text" : "password"} placeholder="Mot de passe" required style={{ width: "100%", paddingRight: "40px" }} />
+                <button type="button" className="password-toggle" onClick={() => setShowUserPassword(!showUserPassword)} aria-label={showUserPassword ? "Masquer le mot de passe" : "Afficher le mot de passe"} style={{ position: "absolute", right: "10px", top: "50%", transform: "translateY(-50%)", border: "0", background: "none", cursor: "pointer", fontSize: "18px" }}>{showUserPassword ? "🙈" : "👁️"}</button>
+              </div>
               <input name="telephone" placeholder="Téléphone" />
               <select name="statut" defaultValue="actif"><option value="actif">Actif</option><option value="suspendu">Suspendu</option><option value="desactive">Désactivé</option></select>
               <button className="btn primary">Enregistrer</button>
@@ -608,6 +696,112 @@ export default function Home() {
         <Panel title="Dernières actions">
           <Table heads={["Date", "Utilisateur", "Action", "Entité", "IP"]} rows={auditLogs.map((log) => [log.created_at ? date(log.created_at) : "-", log.utilisateur?.nom ?? "-", log.action, `${log.entite}${log.entite_id ? ` #${log.entite_id}` : ""}`, log.adresse_ip ?? "-"])} />
         </Panel>
+      </>;
+    }
+
+    if (route === "info-plateforme" || route === "infos") {
+      const plateforme = user.plateforme ?? {};
+      return <>
+        <PageTitle title="Plateforme" subtitle="Informations de la plateforme associée au compte." />
+        <div className="info-shell">
+          <Panel title="Identité de la plateforme">
+            <div className="info-header">
+              <div className="profile-avatar large">{plateforme.image_url ? <img src={plateforme.image_url} alt={plateforme.nom ?? "Plateforme"} /> : <span>🏢</span>}</div>
+              <div>
+                <div className="mini-badge">Plateforme active</div>
+                <strong className="info-title">{plateforme.nom ?? "Plateforme"}</strong>
+                <span className="info-subtitle">{plateforme.slug ?? "-"}</span>
+              </div>
+              <button className="btn secondary" type="button" onClick={() => setEditingPlatform((value) => !value)}>{editingPlatform ? "Annuler" : "Modifier"}</button>
+            </div>
+
+            {!editingPlatform ? (
+              <div className="info-list">
+                <div><label>Email</label><span>{plateforme.email_contact ?? "-"}</span></div>
+                <div><label>Téléphone</label><span>{plateforme.telephone_contact ?? "-"}</span></div>
+                <div><label>Adresse</label><span>{plateforme.adresse ?? "-"}</span></div>
+                <div><label>Statut</label><span>{plateforme.statut ?? "actif"}</span></div>
+              </div>
+            ) : (
+              <form className="info-form" onSubmit={(event) => { event.preventDefault(); void savePlatform(); }}>
+                <div className="field-grid">
+                  <label className="field-group"><span>Nom</span><input value={platformForm.nom} onChange={(event) => setPlatformForm((prev) => ({ ...prev, nom: event.target.value }))} /></label>
+                  <label className="field-group"><span>Slug</span><input value={platformForm.slug} onChange={(event) => setPlatformForm((prev) => ({ ...prev, slug: event.target.value }))} /></label>
+                  <label className="field-group"><span>Email</span><input type="email" value={platformForm.email_contact} onChange={(event) => setPlatformForm((prev) => ({ ...prev, email_contact: event.target.value }))} /></label>
+                  <label className="field-group"><span>Téléphone</span><input value={platformForm.telephone_contact} onChange={(event) => setPlatformForm((prev) => ({ ...prev, telephone_contact: event.target.value }))} /></label>
+                  <label className="field-group full"><span>Adresse</span><input value={platformForm.adresse} onChange={(event) => setPlatformForm((prev) => ({ ...prev, adresse: event.target.value }))} /></label>
+                </div>
+                <div className="action-row">
+                  <button className="btn primary" type="submit">Enregistrer</button>
+                </div>
+              </form>
+            )}
+          </Panel>
+
+          <Panel title="Informations générales">
+            <div className="info-list">
+              <div><label>Entreprise</label><span>KOUECONSOLIDATED</span></div>
+              <div><label>Compte</label><span>{user.role?.nom ?? "Utilisateur"}</span></div>
+              <div><label>Utilisateurs</label><span>{plateforme.limite_utilisateurs ? `${(user.plateforme as any)?.utilisateurs_count ?? 0} / ${plateforme.limite_utilisateurs}` : "-"}</span></div>
+              <div><label>Activités</label><span>{plateforme.limite_activites ? `${(user.plateforme as any)?.activites_count ?? 0} / ${plateforme.limite_activites}` : "-"}</span></div>
+            </div>
+          </Panel>
+        </div>
+      </>;
+    }
+
+    if (route === "info-compte") {
+      return <>
+        <PageTitle title="Mon compte" subtitle="Informations de votre profil et accès." />
+        <div className="info-shell">
+          <Panel title="Profil">
+            <div className="info-header">
+              <div className="profile-avatar">{user.nom?.charAt(0)?.toUpperCase() ?? "U"}</div>
+              <div>
+                <div className="mini-badge">Compte utilisateur</div>
+                <strong className="info-title">{user.nom}</strong>
+                <span className="info-subtitle">{user.email}</span>
+              </div>
+              <button className="btn secondary" type="button" onClick={() => setEditingProfile((value) => !value)}>{editingProfile ? "Annuler" : "Modifier"}</button>
+            </div>
+
+            {!editingProfile ? (
+              <div className="info-list">
+                <div><label>Nom</label><span>{user.nom}</span></div>
+                <div><label>Email</label><span>{user.email}</span></div>
+                <div><label>Téléphone</label><span>{user.telephone ?? "-"}</span></div>
+                <div><label>Rôle</label><span>{user.role?.nom ?? "Utilisateur"}</span></div>
+              </div>
+            ) : (
+              <form className="info-form" onSubmit={(event) => { event.preventDefault(); void saveProfile(); }}>
+                <div className="field-grid">
+                  <label className="field-group"><span>Nom</span><input value={profileForm.nom} onChange={(event) => setProfileForm((prev) => ({ ...prev, nom: event.target.value }))} /></label>
+                  <label className="field-group"><span>Email</span><input type="email" value={profileForm.email} onChange={(event) => setProfileForm((prev) => ({ ...prev, email: event.target.value }))} /></label>
+                  <label className="field-group"><span>Téléphone</span><input value={profileForm.telephone} onChange={(event) => setProfileForm((prev) => ({ ...prev, telephone: event.target.value }))} /></label>
+                  <label className="field-group"><span>Statut</span>
+                    <select value={profileForm.statut} onChange={(event) => setProfileForm((prev) => ({ ...prev, statut: event.target.value }))}>
+                      <option value="actif">Actif</option>
+                      <option value="suspendu">Suspendu</option>
+                      <option value="desactive">Désactivé</option>
+                    </select>
+                  </label>
+                </div>
+                <div className="action-row">
+                  <button className="btn primary" type="submit">Enregistrer</button>
+                </div>
+              </form>
+            )}
+          </Panel>
+
+          <Panel title="Sécurité et accès">
+            <div className="info-list">
+              <div><label>Rôle</label><span>{user.role?.nom ?? "Utilisateur"}</span></div>
+              <div><label>Dernière connexion</label><span>{user.derniere_connexion ? date(user.derniere_connexion) : "-"}</span></div>
+              <div><label>Plateforme</label><span>{user.plateforme?.nom ?? "-"}</span></div>
+              <div><label>Statut</label><span>{user.statut ?? "actif"}</span></div>
+            </div>
+          </Panel>
+        </div>
       </>;
     }
 

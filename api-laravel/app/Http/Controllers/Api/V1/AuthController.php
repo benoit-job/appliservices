@@ -46,7 +46,7 @@ class AuthController extends ApiController
 
     public function moi(Request $request): JsonResponse
     {
-        return $this->ok(['utilisateur' => $request->user()->load('role')]);
+        return $this->ok(['utilisateur' => $request->user()->load(['role', 'plateforme'])]);
     }
 
     public function deconnexion(Request $request): JsonResponse

@@ -8,6 +8,7 @@ use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
@@ -34,6 +35,7 @@ class PlateformeController extends ApiController
 
         $donnees = $this->valider($request);
         $donnees['slug'] = $donnees['slug'] ?: Str::slug($donnees['nom']);
+        $donnees['image_url'] = $this->traiterImage($request, $donnees['image_url'] ?? null);
 
         $plateforme = Plateforme::create($donnees);
         $role = Role::where('slug', 'proprietaire')->first();
@@ -71,6 +73,7 @@ class PlateformeController extends ApiController
             $donnees['slug'] = Str::slug($donnees['nom']);
         }
 
+        $donnees['image_url'] = $this->traiterImage($request, $plateforme->image_url ?? null);
         $plateforme->update($donnees);
         $this->auditer($request, 'modifier', 'plateformes', $plateforme->id, $donnees);
 
@@ -112,6 +115,8 @@ class PlateformeController extends ApiController
             'statut' => ['required', Rule::in(['actif', 'suspendu', 'desactive'])],
             'limite_utilisateurs' => ['required', 'integer', 'min:1', 'max:10000'],
             'limite_activites' => ['required', 'integer', 'min:1', 'max:100000'],
+            'image_url' => ['nullable', 'string', 'max:255'],
+            'image' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
             'options' => ['nullable', 'array'],
         ];
 
@@ -125,5 +130,26 @@ class PlateformeController extends ApiController
         }
 
         return $request->validate($regles);
+    }
+
+    private function traiterImage(Request $request, ?string $imageActuelle = null): ?string
+    {
+        if (!$request->hasFile('image')) {
+            return $request->input('image_url', $imageActuelle);
+        }
+
+        $fichier = $request->file('image');
+        if (!$fichier || !$fichier->isValid()) {
+            return $imageActuelle;
+        }
+
+        if ($imageActuelle) {
+            $ancienChemin = str_replace('/storage/', '', $imageActuelle);
+            Storage::disk('public')->delete($ancienChemin);
+        }
+
+        $chemin = $fichier->store('plateformes', 'public');
+
+        return '/storage/' . str_replace('\\', '/', $chemin);
     }
 }

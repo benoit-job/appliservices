@@ -6,6 +6,7 @@ import { FormEvent, ReactNode, useEffect, useState } from "react";
 type Plateforme = {
   id: number; nom: string; slug: string;
   email_contact?: string; telephone_contact?: string; adresse?: string;
+  image_url?: string | null;
   statut: "actif" | "suspendu" | "desactive";
   limite_utilisateurs: number; limite_activites: number;
   utilisateurs_count?: number; activites_count?: number; created_at?: string;
@@ -173,39 +174,45 @@ export default function AdminPage() {
   /* Plateformes CRUD */
   async function creer(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const d = Object.fromEntries(new FormData(e.currentTarget));
-    await callApi("plateformes", {
-      method: "POST", body: JSON.stringify({
-        nom: d.nom, slug: d.slug || undefined,
-        email_contact: d.email_contact || undefined,
-        telephone_contact: d.telephone_contact || undefined,
-        adresse: d.adresse || undefined, statut: d.statut,
-        limite_utilisateurs: parseInt(String(d.limite_utilisateurs), 10),
-        limite_activites: parseInt(String(d.limite_activites), 10),
-        utilisateur_defaut: {
-          nom: d["utilisateur_defaut.nom"],
-          email: d["utilisateur_defaut.email"],
-          mot_de_passe: d["utilisateur_defaut.mot_de_passe"],
-          telephone: d["utilisateur_defaut.telephone"] || undefined,
-        },
-      }),
-    });
+    const form = new FormData(e.currentTarget);
+    const image = form.get("image");
+    if (image instanceof File && image.size === 0) form.delete("image");
+    const d = Object.fromEntries(form.entries());
+    const payload = new FormData();
+    payload.set("nom", String(d.nom ?? ""));
+    payload.set("slug", String(d.slug ?? ""));
+    payload.set("email_contact", String(d.email_contact ?? ""));
+    payload.set("telephone_contact", String(d.telephone_contact ?? ""));
+    payload.set("adresse", String(d.adresse ?? ""));
+    payload.set("statut", String(d.statut ?? "actif"));
+    payload.set("limite_utilisateurs", String(d.limite_utilisateurs ?? "10"));
+    payload.set("limite_activites", String(d.limite_activites ?? "25"));
+    payload.set("utilisateur_defaut[nom]", String(d["utilisateur_defaut.nom"] ?? ""));
+    payload.set("utilisateur_defaut[email]", String(d["utilisateur_defaut.email"] ?? ""));
+    payload.set("utilisateur_defaut[mot_de_passe]", String(d["utilisateur_defaut.mot_de_passe"] ?? ""));
+    payload.set("utilisateur_defaut[telephone]", String(d["utilisateur_defaut.telephone"] ?? ""));
+    if (image instanceof File && image.size > 0) payload.set("image", image, image.name);
+    await callApi("plateformes", { method: "POST", body: payload });
     setMCreate(false); await refresh();
   }
 
   async function modifier(e: FormEvent<HTMLFormElement>, id: number) {
     e.preventDefault();
-    const d = Object.fromEntries(new FormData(e.currentTarget));
-    await callApi(`plateformes/${id}`, {
-      method: "PUT", body: JSON.stringify({
-        nom: d.nom, slug: d.slug || undefined,
-        email_contact: d.email_contact || undefined,
-        telephone_contact: d.telephone_contact || undefined,
-        adresse: d.adresse || undefined, statut: d.statut,
-        limite_utilisateurs: parseInt(String(d.limite_utilisateurs), 10),
-        limite_activites: parseInt(String(d.limite_activites), 10),
-      }),
-    });
+    const form = new FormData(e.currentTarget);
+    const image = form.get("image");
+    if (image instanceof File && image.size === 0) form.delete("image");
+    const d = Object.fromEntries(form.entries());
+    const payload = new FormData();
+    payload.set("nom", String(d.nom ?? ""));
+    payload.set("slug", String(d.slug ?? ""));
+    payload.set("email_contact", String(d.email_contact ?? ""));
+    payload.set("telephone_contact", String(d.telephone_contact ?? ""));
+    payload.set("adresse", String(d.adresse ?? ""));
+    payload.set("statut", String(d.statut ?? "actif"));
+    payload.set("limite_utilisateurs", String(d.limite_utilisateurs ?? "10"));
+    payload.set("limite_activites", String(d.limite_activites ?? "25"));
+    if (image instanceof File && image.size > 0) payload.set("image", image, image.name);
+    await callApi(`plateformes/${id}`, { method: "PUT", body: payload });
     setMEdit(null); await refresh();
     if (sel?.id === id) {
       const fresh = plateformes.find(p => p.id === id);
@@ -607,8 +614,15 @@ export default function AdminPage() {
                   {sel.statut !== "desactive" && <DangBtn onClick={() => void changerStatut(sel.id, "desactive")}>Desactiver</DangBtn>}
                 </div>
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 12, marginBottom: 28 }}>
-                {[["Slug", sel.slug], ["Email", sel.email_contact], ["Tel", sel.telephone_contact], ["Adresse", sel.adresse], ["Users", `${sel.utilisateurs_count ?? 0}/${sel.limite_utilisateurs}`], ["Activites", `${sel.activites_count ?? 0}/${sel.limite_activites}`]].map(([l, v]) => (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 12, marginBottom: 28 }}>                <div style={{ background: "#1a1630", borderRadius: 10, padding: 14, border: "1px solid rgba(124,58,237,.1)", display: "flex", alignItems: "center", gap: 12 }}>
+                  <div style={{ width: 68, height: 68, borderRadius: 12, overflow: "hidden", background: "rgba(255,255,255,.04)", border: "1px solid rgba(124,58,237,.2)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    {sel.image_url ? <img src={sel.image_url} alt={sel.nom} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ color: "rgba(255,255,255,.7)", fontSize: 20 }}>🏢</span>}
+                  </div>
+                  <div>
+                    <span style={{ display: "block", color: "rgba(255,255,255,.35)", fontSize: 11, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Logo</span>
+                    <span style={{ color: "#e2d9f3", fontSize: 15, fontWeight: 600 }}>{sel.nom}</span>
+                  </div>
+                </div>                {[["Slug", sel.slug], ["Email", sel.email_contact], ["Tel", sel.telephone_contact], ["Adresse", sel.adresse], ["Users", `${sel.utilisateurs_count ?? 0}/${sel.limite_utilisateurs}`], ["Activites", `${sel.activites_count ?? 0}/${sel.limite_activites}`]].map(([l, v]) => (
                   <div key={l} style={{ background: "#1a1630", borderRadius: 10, padding: 14, border: "1px solid rgba(124,58,237,.1)" }}>
                     <span style={{ display: "block", color: "rgba(255,255,255,.35)", fontSize: 11, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>{l}</span>
                     <span style={{ color: "#e2d9f3", fontSize: 15, fontWeight: 600 }}>{v ?? "\u2014"}</span>
@@ -792,6 +806,10 @@ export default function AdminPage() {
             <Row><Field id="cp-nom" label="Nom *" name="nom" required ph="Ma Plateforme" /><Field id="cp-slug" label="Slug (auto)" name="slug" ph="ma-plateforme" /></Row>
             <Row><Field id="cp-email" label="Email" name="email_contact" type="email" ph="contact@..." /><Field id="cp-tel" label="Tel" name="telephone_contact" ph="+225..." /></Row>
             <Field id="cp-adresse" label="Adresse" name="adresse" ph="Abidjan, CI" />
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <label style={{ color: "rgba(255,255,255,.5)", fontSize: 13, fontWeight: 600 }}>Image de la plateforme</label>
+              <input name="image" type="file" accept="image/*" style={{ background: "rgba(255,255,255,.05)", border: "1px solid rgba(124,58,237,.2)", borderRadius: 8, padding: "10px 12px", color: "#e2d9f3" }} />
+            </div>
             <Row>
               <SelField id="cp-stat" label="Statut *" name="statut" opts={[["actif","Actif"],["suspendu","Suspendu"],["desactive","Desactive"]]} dv="actif" />
               <Field id="cp-lu" label="Limite users *" name="limite_utilisateurs" type="number" dv="10" min="1" required />
@@ -811,6 +829,11 @@ export default function AdminPage() {
             <Row><Field label="Nom *" name="nom" required dv={mEdit.nom} /><Field label="Slug" name="slug" dv={mEdit.slug} /></Row>
             <Row><Field label="Email" name="email_contact" type="email" dv={mEdit.email_contact} /><Field label="Tel" name="telephone_contact" dv={mEdit.telephone_contact} /></Row>
             <Field label="Adresse" name="adresse" dv={mEdit.adresse} />
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <label style={{ color: "rgba(255,255,255,.5)", fontSize: 13, fontWeight: 600 }}>Image de la plateforme</label>
+              {mEdit.image_url && <img src={mEdit.image_url} alt={mEdit.nom} style={{ width: 88, height: 88, objectFit: "cover", borderRadius: 12, border: "1px solid rgba(124,58,237,.2)" }} />}
+              <input name="image" type="file" accept="image/*" style={{ background: "rgba(255,255,255,.05)", border: "1px solid rgba(124,58,237,.2)", borderRadius: 8, padding: "10px 12px", color: "#e2d9f3" }} />
+            </div>
             <Row>
               <SelField label="Statut" name="statut" opts={[["actif","Actif"],["suspendu","Suspendu"],["desactive","Desactive"]]} dv={mEdit.statut} />
               <Field label="Limite users *" name="limite_utilisateurs" type="number" dv={String(mEdit.limite_utilisateurs)} min="1" required />

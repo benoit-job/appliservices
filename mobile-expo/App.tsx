@@ -2,6 +2,7 @@ import { ComponentProps, useEffect, useRef, useState } from "react";
 import {
   Alert,
   Animated,
+  Image,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -17,7 +18,7 @@ import { enqueueOperation, flushQueue, getQueue } from "./src/storage/offlineQue
 import { ChartFilters, defaultChartFilters, filtersToQuery, Graphique } from "./src/types/charts";
 
 type Role = { id: number; nom: string; slug?: string };
-type User = { id: number; role_id?: number; nom: string; email: string; telephone?: string; statut?: string; role?: { nom: string } };
+type User = { id: number; role_id?: number; nom: string; email: string; telephone?: string; statut?: string; role?: { nom: string }; plateforme?: { id?: number; nom?: string; slug?: string; email_contact?: string; telephone_contact?: string; adresse?: string; image_url?: string | null; statut?: string; limite_utilisateurs?: number; limite_activites?: number } };
 type Reference = { id: number; nom: string; code?: string; nature?: string };
 type Resume = { activites: number; revenus: number; decaissements: number; resultat: number; retards: number; inventaire: number };
 type TypeActivite = { id: number; nom: string; slug?: string; frequence_versement: string; a_versement_recurrent: boolean; actif: boolean; activites_count?: number };
@@ -44,6 +45,7 @@ const routes = [
   ["utilisateurs", "Utilisateurs"],
   ["notifications", "Notifications"],
   ["audit", "Audit"],
+  ["infos", "Infos"],
   ["parametres", "Parametres"],
 ] as const;
 
@@ -90,6 +92,10 @@ export default function App() {
   const [user, setUserState] = useState<User | null>(null);
   const [route, setRoute] = useState<RouteKey>("tableau-bord");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [editingProfile, setEditingProfile] = useState(false);
+  const [editingPlatform, setEditingPlatform] = useState(false);
+  const [profileForm, setProfileForm] = useState({ nom: "", email: "", telephone: "", statut: "actif" });
+  const [platformForm, setPlatformForm] = useState({ nom: "", slug: "", email_contact: "", telephone_contact: "", adresse: "" });
   const [dashboard, setDashboard] = useState<Dashboard>({});
   const [vueEnsemble, setVueEnsemble] = useState<Graphique[]>([]);
   const [chartFilters, setChartFilters] = useState<ChartFilters>(defaultChartFilters);
@@ -104,6 +110,9 @@ export default function App() {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [parametres, setParametres] = useState<Parametre[]>([]);
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [showUserPassword, setShowUserPassword] = useState(false);
+  const [syncTooltip, setSyncTooltip] = useState(false);
   const [references, setReferences] = useState<{
     activites: Reference[];
     categories_transactions: Reference[];
@@ -171,6 +180,24 @@ export default function App() {
   const [paramDrafts, setParamDrafts] = useState<Record<string, string>>({});
 
   useEffect(() => {
+    if (user) {
+      setProfileForm({
+        nom: user.nom ?? "",
+        email: user.email ?? "",
+        telephone: user.telephone ?? "",
+        statut: user.statut ?? "actif",
+      });
+      setPlatformForm({
+        nom: user.plateforme?.nom ?? "",
+        slug: user.plateforme?.slug ?? "",
+        email_contact: user.plateforme?.email_contact ?? "",
+        telephone_contact: user.plateforme?.telephone_contact ?? "",
+        adresse: user.plateforme?.adresse ?? "",
+      });
+    }
+  }, [user]);
+
+  useEffect(() => {
     void bootstrap();
   }, []);
 
@@ -224,6 +251,49 @@ export default function App() {
     } finally {
       setRefreshing(false);
     }
+  }
+
+  async function saveProfile() {
+    if (!user) return;
+
+    const payload = {
+      nom: profileForm.nom,
+      email: profileForm.email,
+      telephone: profileForm.telephone,
+      statut: profileForm.statut || "actif",
+      role_id: user.role_id ?? undefined,
+    };
+
+    await api(`utilisateurs/${user.id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+    const me = await api<{ utilisateur: User }>("moi");
+    setUserState(me.utilisateur);
+    setEditingProfile(false);
+  }
+
+  async function savePlatform() {
+    if (!user?.plateforme?.id) return;
+
+    const payload = {
+      nom: platformForm.nom,
+      slug: platformForm.slug,
+      email_contact: platformForm.email_contact,
+      telephone_contact: platformForm.telephone_contact,
+      adresse: platformForm.adresse,
+      statut: user.plateforme.statut ?? "actif",
+      limite_utilisateurs: user.plateforme.limite_utilisateurs ?? 10,
+      limite_activites: user.plateforme.limite_activites ?? 25,
+    };
+
+    await api(`plateformes/${user.plateforme.id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+    const me = await api<{ utilisateur: User }>("moi");
+    setUserState(me.utilisateur);
+    setEditingPlatform(false);
   }
 
   async function openRoute(nextRoute: RouteKey) {
@@ -454,7 +524,12 @@ export default function App() {
             </View>
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Mot de passe</Text>
-              <TextInput style={styles.loginInput} value={password} onChangeText={setPassword} secureTextEntry />
+              <View style={{ position: "relative", flexDirection: "row", alignItems: "center" }}>
+                <TextInput style={[styles.loginInput, { flex: 1 }]} value={password} onChangeText={setPassword} secureTextEntry={!showLoginPassword} />
+                <Pressable onPress={() => setShowLoginPassword(!showLoginPassword)} style={{ position: "absolute", right: 12, padding: 8 }}>
+                  <Text style={{ fontSize: 18 }}>{showLoginPassword ? "🙈" : "👁️"}</Text>
+                </Pressable>
+              </View>
             </View>
             <Pressable style={styles.loginPrimary} onPress={handleLogin}>
               <Text style={styles.primaryText}>Se connecter</Text>
@@ -472,40 +547,89 @@ export default function App() {
 
   return (
     <SafeAreaView style={styles.screen}>
-      <View style={styles.appHeader}>
-        <View style={styles.headerLeft}>
-          <Pressable style={styles.menuToggle} onPress={() => setMenuOpen((value) => !value)} accessibilityLabel="Ouvrir le menu">
-            <View style={styles.menuBar} />
-            <View style={styles.menuBar} />
-            <View style={styles.menuBar} />
-          </Pressable>
-          <View>
-            <Text style={styles.brand}>KOUE MANAGER</Text>
-            <Text style={styles.muted}>{currentRouteLabel(route)} - {user.nom}</Text>
+      <View style={styles.appContainer}>
+        <View style={styles.appHeader}>
+          <View style={styles.headerLeft}>
+            <Pressable style={styles.menuToggle} onPress={() => setMenuOpen((value) => !value)} accessibilityLabel="Ouvrir le menu">
+              <View style={styles.menuBar} />
+              <View style={styles.menuBar} />
+              <View style={styles.menuBar} />
+            </Pressable>
+            <View>
+              <Text style={styles.brand}>KOUE MANAGER</Text>
+              <Text style={styles.muted}>{currentRouteLabel(route)} - {user.nom}</Text>
+            </View>
+          </View>
+          <View style={styles.headerActions}>
+            {syncTooltip && (
+              <View style={styles.syncTooltip} pointerEvents="none">
+                <Text style={styles.syncTooltipText}>Synchroniser hors ligne ({offlineCount})</Text>
+              </View>
+            )}
+            <Pressable
+              style={[styles.syncBtn, offlineCount > 0 && styles.syncBtnActive]}
+              onPress={() => { setSyncTooltip(false); void syncOffline(); }}
+              onLongPress={() => setSyncTooltip(true)}
+              onPressOut={() => setSyncTooltip(false)}
+              accessibilityLabel="Synchroniser hors ligne"
+            >
+              <SyncIcon />
+              {offlineCount > 0 && (
+                <View style={styles.syncBadge}>
+                  <Text style={styles.syncBadgeText}>{offlineCount}</Text>
+                </View>
+              )}
+            </Pressable>
+            <Pressable style={styles.logout} onPress={logout} accessibilityLabel="Deconnexion">
+              <LogoutIcon />
+            </Pressable>
           </View>
         </View>
-        <Pressable style={styles.logout} onPress={logout} accessibilityLabel="Deconnexion">
-          <LogoutIcon />
-        </Pressable>
-      </View>
 
-      {menuOpen && (
-        <View style={styles.menuWrap}>
-          {routes.map(([key, label]) => (
-            <Pressable key={key} style={[styles.menuItem, route === key && styles.menuItemActive]} onPress={() => void openRoute(key)}>
-              <Text style={[styles.menuText, route === key && styles.menuTextActive]}>{label}</Text>
-            </Pressable>
-          ))}
-        </View>
-      )}
+        {menuOpen && (
+          <>
+            <Pressable style={styles.menuOverlay} onPress={() => setMenuOpen(false)} />
+            <View style={styles.menuWrap}>
+              {routes.map(([key, label]) => (
+                <View key={key}>
+                  <Pressable style={[styles.menuItem, (route === key || (key === "infos" && (route === "info-plateforme" || route === "info-compte"))) && styles.menuItemActive]} onPress={() => {
+                    if (key === "infos") {
+                      setRoute("infos");
+                      // ne pas fermer pour afficher les sous-menus
+                      return;
+                    }
+                    void openRoute(key);
+                    setMenuOpen(false);
+                  }}>
+                    <Text style={[styles.menuText, (route === key || (key === "infos" && (route === "info-plateforme" || route === "info-compte"))) && styles.menuTextActive]}>{label}</Text>
+                  </Pressable>
+                  {key === "infos" && (
+                    <View style={styles.submenuWrap}>
+                      <Pressable
+                        style={[styles.submenuItem, route === "info-plateforme" && styles.submenuItemActive]}
+                        onPress={() => { setRoute("info-plateforme"); setMenuOpen(false); }}
+                      >
+                        <Text style={[styles.submenuText, route === "info-plateforme" && styles.submenuTextActive]}>📍 Plateforme</Text>
+                      </Pressable>
+                      <Pressable
+                        style={[styles.submenuItem, route === "info-compte" && styles.submenuItemActive]}
+                        onPress={() => { setRoute("info-compte"); setMenuOpen(false); }}
+                      >
+                        <Text style={[styles.submenuText, route === "info-compte" && styles.submenuTextActive]}>👤 Mon compte</Text>
+                      </Pressable>
+                    </View>
+                  )}
+                </View>
+              ))}
+            </View>
+          </>
+        )}
 
-      <ScrollView contentContainerStyle={styles.content}>
+        <ScrollView contentContainerStyle={styles.content}>
         {refreshing && <Splash compact />}
         {renderRoute()}
-        <Pressable style={styles.secondary} onPress={syncOffline}>
-          <Text style={styles.secondaryText}>Synchroniser hors ligne ({offlineCount})</Text>
-        </Pressable>
-      </ScrollView>
+        </ScrollView>
+      </View>
     </SafeAreaView>
   );
 
@@ -680,7 +804,7 @@ export default function App() {
             <ChoiceGroup label="Role" items={references.roles} selected={userDraft.role_id} onSelect={(value) => setUserDraft((draft) => ({ ...draft, role_id: value }))} />
             <Field label="Nom" value={userDraft.nom} onChangeText={(value) => setUserDraft((draft) => ({ ...draft, nom: value }))} />
             <Field label="Email" value={userDraft.email} onChangeText={(value) => setUserDraft((draft) => ({ ...draft, email: value }))} autoCapitalize="none" keyboardType="email-address" />
-            <Field label="Mot de passe" value={userDraft.mot_de_passe} onChangeText={(value) => setUserDraft((draft) => ({ ...draft, mot_de_passe: value }))} secureTextEntry />
+            <Field label="Mot de passe" value={userDraft.mot_de_passe} onChangeText={(value) => setUserDraft((draft) => ({ ...draft, mot_de_passe: value }))} secureTextEntry showPassword={showUserPassword} onTogglePassword={() => setShowUserPassword(!showUserPassword)} />
             <Field label="Telephone" value={userDraft.telephone} onChangeText={(value) => setUserDraft((draft) => ({ ...draft, telephone: value }))} keyboardType="phone-pad" />
             <ChoiceGroup label="Statut" items={userStatusOptions} selected={userDraft.statut} onSelect={(value) => setUserDraft((draft) => ({ ...draft, statut: value }))} />
             <Pressable style={styles.primary} onPress={() => void submitUtilisateurMobile()}><Text style={styles.primaryText}>Enregistrer</Text></Pressable>
@@ -760,6 +884,88 @@ export default function App() {
       );
     }
 
+    if (route === "info-plateforme" || route === "infos") {
+      const plateforme = user.plateforme ?? {};
+      return (
+        <>
+          <SectionTitle title="Plateforme" subtitle="Informations associees a votre espace." />
+          <FormCard title="Plateforme">
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+              <View style={{ width: 92, height: 92, borderRadius: 20, backgroundColor: "#edf2f7", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+                {plateforme.image_url ? (
+                  <Image source={{ uri: plateforme.image_url }} style={{ width: "100%", height: "100%" }} resizeMode="cover" />
+                ) : (
+                  <Text style={{ fontSize: 32 }}>🏢</Text>
+                )}
+              </View>
+              <Pressable style={styles.secondary} onPress={() => setEditingPlatform((value) => !value)}>
+                <Text style={styles.secondaryText}>{editingPlatform ? "Annuler" : "Modifier"}</Text>
+              </Pressable>
+            </View>
+
+            {!editingPlatform ? (
+              <>
+                <Field label="Nom" value={plateforme.nom ?? "-"} editable={false} />
+                <Field label="Slug" value={plateforme.slug ?? "-"} editable={false} />
+                <Field label="Email" value={plateforme.email_contact ?? "-"} editable={false} />
+                <Field label="Telephone" value={plateforme.telephone_contact ?? "-"} editable={false} />
+                <Field label="Adresse" value={plateforme.adresse ?? "-"} editable={false} />
+              </>
+            ) : (
+              <>
+                <Field label="Nom" value={platformForm.nom} onChangeText={(value) => setPlatformForm((prev) => ({ ...prev, nom: value }))} />
+                <Field label="Slug" value={platformForm.slug} onChangeText={(value) => setPlatformForm((prev) => ({ ...prev, slug: value }))} />
+                <Field label="Email" value={platformForm.email_contact} onChangeText={(value) => setPlatformForm((prev) => ({ ...prev, email_contact: value }))} keyboardType="email-address" autoCapitalize="none" />
+                <Field label="Telephone" value={platformForm.telephone_contact} onChangeText={(value) => setPlatformForm((prev) => ({ ...prev, telephone_contact: value }))} keyboardType="phone-pad" />
+                <Field label="Adresse" value={platformForm.adresse} onChangeText={(value) => setPlatformForm((prev) => ({ ...prev, adresse: value }))} />
+                <Pressable style={styles.primary} onPress={() => void savePlatform()}>
+                  <Text style={styles.primaryText}>Enregistrer</Text>
+                </Pressable>
+              </>
+            )}
+          </FormCard>
+        </>
+      );
+    }
+
+    if (route === "info-compte") {
+      return (
+        <>
+          <SectionTitle title="Mon compte" subtitle="Informations de profil." />
+          <FormCard title="Compte">
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+              <View style={{ width: 58, height: 58, borderRadius: 29, backgroundColor: "#0757a6", alignItems: "center", justifyContent: "center" }}>
+                <Text style={{ color: "#fff", fontWeight: "900", fontSize: 22 }}>{user.nom?.charAt(0)?.toUpperCase() ?? "U"}</Text>
+              </View>
+              <Pressable style={styles.secondary} onPress={() => setEditingProfile((value) => !value)}>
+                <Text style={styles.secondaryText}>{editingProfile ? "Annuler" : "Modifier"}</Text>
+              </Pressable>
+            </View>
+
+            {!editingProfile ? (
+              <>
+                <Field label="Nom" value={user.nom} editable={false} />
+                <Field label="Email" value={user.email} editable={false} />
+                <Field label="Telephone" value={user.telephone ?? "-"} editable={false} />
+                <Field label="Role" value={user.role?.nom ?? "-"} editable={false} />
+                <Field label="Plateforme" value={user.plateforme?.nom ?? "-"} editable={false} />
+              </>
+            ) : (
+              <>
+                <Field label="Nom" value={profileForm.nom} onChangeText={(value) => setProfileForm((prev) => ({ ...prev, nom: value }))} />
+                <Field label="Email" value={profileForm.email} onChangeText={(value) => setProfileForm((prev) => ({ ...prev, email: value }))} autoCapitalize="none" keyboardType="email-address" />
+                <Field label="Telephone" value={profileForm.telephone} onChangeText={(value) => setProfileForm((prev) => ({ ...prev, telephone: value }))} keyboardType="phone-pad" />
+                <Field label="Statut" value={profileForm.statut} onChangeText={(value) => setProfileForm((prev) => ({ ...prev, statut: value }))} />
+                <Pressable style={styles.primary} onPress={() => void saveProfile()}>
+                  <Text style={styles.primaryText}>Enregistrer</Text>
+                </Pressable>
+              </>
+            )}
+          </FormCard>
+        </>
+      );
+    }
+
     return (
       <>
         <SectionTitle title="Parametres" subtitle="Configuration globale." />
@@ -826,17 +1032,34 @@ function FormCard({ title, children }: { title: string; children: React.ReactNod
   );
 }
 
-function Field({ label, multiline = false, ...props }: { label: string } & ComponentProps<typeof TextInput>) {
+function Field({ label, multiline = false, showPassword = false, onTogglePassword, secureTextEntry = false, ...props }: { label: string; multiline?: boolean; showPassword?: boolean; onTogglePassword?: () => void; secureTextEntry?: boolean } & ComponentProps<typeof TextInput>) {
   return (
     <View style={styles.field}>
       <Text style={styles.inputLabel}>{label}</Text>
-      <TextInput
-        style={[styles.input, multiline && styles.inputMultiline]}
-        multiline={multiline}
-        textAlignVertical={multiline ? "top" : "center"}
-        placeholderTextColor="#8a97aa"
-        {...props}
-      />
+      {secureTextEntry && onTogglePassword ? (
+        <View style={{ flexDirection: "row", alignItems: "center" }}>
+          <TextInput
+            style={[styles.input, multiline && styles.inputMultiline, { flex: 1 }]}
+            multiline={multiline}
+            textAlignVertical={multiline ? "top" : "center"}
+            placeholderTextColor="#8a97aa"
+            secureTextEntry={!showPassword}
+            {...props}
+          />
+          <Pressable onPress={onTogglePassword} style={{ position: "absolute", right: 12, padding: 8 }}>
+            <Text style={{ fontSize: 16 }}>{showPassword ? "🙈" : "👁️"}</Text>
+          </Pressable>
+        </View>
+      ) : (
+        <TextInput
+          style={[styles.input, multiline && styles.inputMultiline]}
+          multiline={multiline}
+          textAlignVertical={multiline ? "top" : "center"}
+          placeholderTextColor="#8a97aa"
+          secureTextEntry={secureTextEntry}
+          {...props}
+        />
+      )}
     </View>
   );
 }
@@ -1004,6 +1227,21 @@ function LogoutIcon() {
   );
 }
 
+function SyncIcon() {
+  return (
+    <View style={styles.syncIcon} pointerEvents="none">
+      {/* Arc superieur */}
+      <View style={styles.syncArcTop} />
+      {/* Arc inferieur */}
+      <View style={styles.syncArcBottom} />
+      {/* Fleche haut droite */}
+      <View style={styles.syncArrowTop} />
+      {/* Fleche bas gauche */}
+      <View style={styles.syncArrowBottom} />
+    </View>
+  );
+}
+
 function currentRouteLabel(route: RouteKey) {
   return routes.find(([key]) => key === route)?.[1] ?? "Tableau de bord";
 }
@@ -1044,6 +1282,7 @@ function parseSchema(value: string) {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: "#f5f7fb" },
   loginScreen: { flex: 1, backgroundColor: "#061a37" },
+  appContainer: { flex: 1, position: "relative" },
   content: { padding: 16, gap: 14, paddingBottom: 28 },
   appHeader: {
     flexDirection: "row",
@@ -1058,6 +1297,103 @@ const styles = StyleSheet.create({
     borderBottomColor: "#dde5ef",
   },
   headerLeft: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 12 },
+  headerActions: { flexDirection: "row", alignItems: "center", gap: 8, position: "relative" },
+  syncBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 7,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#eaf3ff",
+    borderWidth: 1,
+    borderColor: "#cfe4ff",
+  },
+  syncBtnActive: {
+    backgroundColor: "#fff7e6",
+    borderColor: "#f3b20b",
+  },
+  syncBadge: {
+    position: "absolute",
+    top: 5,
+    right: 5,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: "#f3b20b",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 3,
+  },
+  syncBadgeText: { color: "#1c2431", fontSize: 9, fontWeight: "900" },
+  syncTooltip: {
+    position: "absolute",
+    bottom: 50,
+    right: 0,
+    backgroundColor: "#162033",
+    borderRadius: 7,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    zIndex: 99,
+    shadowColor: "#000",
+    shadowOpacity: 0.28,
+    shadowRadius: 10,
+    elevation: 8,
+    minWidth: 200,
+  },
+  syncTooltipText: { color: "#fff", fontSize: 12, fontWeight: "700", textAlign: "center" },
+  syncIcon: { width: 22, height: 22, position: "relative", alignItems: "center", justifyContent: "center" },
+  syncArcTop: {
+    position: "absolute",
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    borderWidth: 2.5,
+    borderColor: "#0757a6",
+    borderBottomColor: "transparent",
+    borderLeftColor: "transparent",
+    top: 1,
+    left: 1,
+  },
+  syncArcBottom: {
+    position: "absolute",
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    borderWidth: 2.5,
+    borderColor: "#0757a6",
+    borderTopColor: "transparent",
+    borderRightColor: "transparent",
+    bottom: 1,
+    right: 1,
+  },
+  syncArrowTop: {
+    position: "absolute",
+    top: 0,
+    right: 2,
+    width: 0,
+    height: 0,
+    borderTopWidth: 5,
+    borderBottomWidth: 5,
+    borderLeftWidth: 5,
+    borderTopColor: "transparent",
+    borderBottomColor: "transparent",
+    borderLeftColor: "#0757a6",
+    transform: [{ rotate: "-45deg" }],
+  },
+  syncArrowBottom: {
+    position: "absolute",
+    bottom: 0,
+    left: 2,
+    width: 0,
+    height: 0,
+    borderTopWidth: 5,
+    borderBottomWidth: 5,
+    borderLeftWidth: 5,
+    borderTopColor: "transparent",
+    borderBottomColor: "transparent",
+    borderLeftColor: "#0757a6",
+    transform: [{ rotate: "135deg" }],
+  },
   menuToggle: {
     width: 44,
     height: 44,
@@ -1075,16 +1411,30 @@ const styles = StyleSheet.create({
     borderRadius: 3,
     backgroundColor: "#0757a6",
   },
+  menuOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0,0,0,0.35)",
+    zIndex: 10,
+  },
   menuWrap: {
-    gap: 8,
+    position: "absolute",
+    top: 68,
+    left: 0,
+    right: 0,
+    zIndex: 11,
+    gap: 4,
     padding: 12,
     backgroundColor: "#fff",
     borderBottomWidth: 1,
     borderBottomColor: "#dde5ef",
     shadowColor: "#000",
-    shadowOpacity: 0.08,
-    shadowRadius: 14,
-    elevation: 4,
+    shadowOpacity: 0.18,
+    shadowRadius: 18,
+    elevation: 12,
   },
   menuItem: {
     minHeight: 44,
@@ -1096,6 +1446,24 @@ const styles = StyleSheet.create({
   menuItemActive: { backgroundColor: "#0757a6" },
   menuText: { color: "#42516a", fontWeight: "800", fontSize: 13 },
   menuTextActive: { color: "#fff" },
+  submenuWrap: {
+    marginTop: 2,
+    marginLeft: 14,
+    gap: 3,
+    borderLeftWidth: 2,
+    borderLeftColor: "#cfe4ff",
+    paddingLeft: 10,
+  },
+  submenuItem: {
+    minHeight: 38,
+    justifyContent: "center",
+    borderRadius: 6,
+    paddingHorizontal: 12,
+    backgroundColor: "#f0f5ff",
+  },
+  submenuItemActive: { backgroundColor: "#0757a6" },
+  submenuText: { color: "#3a5a8c", fontWeight: "700", fontSize: 13 },
+  submenuTextActive: { color: "#fff" },
   loginContent: { flexGrow: 1, padding: 22, justifyContent: "center", gap: 22 },
   loginCircleOne: {
     position: "absolute",

@@ -18,6 +18,7 @@ return new class extends Migration
             $table->enum('statut', ['actif', 'suspendu', 'desactive'])->default('actif');
             $table->unsignedInteger('limite_utilisateurs')->default(10);
             $table->unsignedInteger('limite_activites')->default(25);
+            $table->string('image_url')->nullable();
             $table->json('options')->nullable();
             $table->timestamps();
             $table->softDeletes();
