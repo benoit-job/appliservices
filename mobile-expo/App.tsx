@@ -309,6 +309,9 @@ export default function App() {
   async function loadData() {
     setRefreshing(true);
     try {
+      /* Ralentissement artificiel (1.5s) */
+      await new Promise((r) => setTimeout(r, 1500));
+
       const [home, refs] = await Promise.all([
         api<Dashboard>("tableau-bord"),
         api<{
@@ -933,11 +936,17 @@ export default function App() {
             <Stat label={t("inventoryValue")} value={money(resume?.inventaire)} />
           </View>
           <ChartGrid graphiques={dashboard.graphiques ?? []} compact colors={colors} emptyText={t("noCharts")} />
-          <ListCard title={t("recentDeadlines")} empty={t("noDeadlines")}>
-            {(dashboard.echeances ?? []).slice(0, 5).map((item) => (
-              <DataRow key={item.id} title={item.activite?.nom ?? "-"} subtitle={item.activite?.code ?? "-"} value={t(item.statut)} />
-            ))}
-          </ListCard>
+          <DataTable
+            loading={refreshing}
+            title={t("recentDeadlines")}
+            empty={t("noDeadlines")}
+            heads={[t("activity"), t("code"), t("status")]}
+            rows={(dashboard.echeances ?? []).slice(0, 5).map((item) => [
+              item.activite?.nom ?? "-",
+              item.activite?.code ?? "-",
+              <Pill key="pill" value={t(item.statut)} />
+            ])}
+          />
         </>
       );
     }
@@ -974,11 +983,19 @@ export default function App() {
             <Field label={t("jsonAttributes")} value={activiteDraft.attributs} onChangeText={(value) => setActiviteDraft((draft) => ({ ...draft, attributs: value }))} placeholder='{"plaque":"1234CI"}' multiline />
             <Pressable style={styles.primary} onPress={() => void submitActiviteMobile()}><Text style={styles.primaryText}>{t("save")}</Text></Pressable>
           </FormCard>
-          <ListCard title={t("activitiesList")} empty={t("noActivities")}>
-            {activites.map((item) => (
-              <DataRow key={item.id} title={item.nom} subtitle={`${item.code} - ${item.type_activite?.nom ?? t("typeFallback")} - ${item.gerant?.nom ?? t("noManager")}`} value={t(item.statut)} />
-            ))}
-          </ListCard>
+          <DataTable
+            loading={refreshing}
+            title={t("activitiesList")}
+            empty={t("noActivities")}
+            heads={[t("name"), t("code"), t("type"), t("assignedManager"), t("status")]}
+            rows={activites.map((item) => [
+              item.nom,
+              item.code,
+              item.type_activite?.nom ?? t("typeFallback"),
+              item.gerant?.nom ?? t("noManager"),
+              <Pill key="pill" value={t(item.statut)} />
+            ])}
+          />
         </>
       );
     }
@@ -988,11 +1005,18 @@ export default function App() {
         <>
           <SectionTitle title={t("installments")} subtitle={t("installmentsSubtitle")} />
           <TransactionFormCard type="revenu" />
-          <ListCard title={t("deadlines")} empty={t("noInstallments")}>
-            {echeances.map((item) => (
-              <DataRow key={item.id} title={item.activite?.nom ?? "-"} subtitle={`${money(item.montant_paye)} / ${money(item.montant_attendu)}`} value={t(item.statut)} />
-            ))}
-          </ListCard>
+          <DataTable
+            loading={refreshing}
+            title={t("deadlines")}
+            empty={t("noInstallments")}
+            heads={[t("activity"), t("paye"), t("attendu"), t("status")]}
+            rows={echeances.map((item) => [
+              item.activite?.nom ?? "-",
+              money(item.montant_paye),
+              money(item.montant_attendu),
+              <Pill key="pill" value={t(item.statut)} />
+            ])}
+          />
         </>
       );
     }
@@ -1002,24 +1026,27 @@ export default function App() {
         <>
           <SectionTitle title={t("expenses")} subtitle={t("expensesSubtitle")} />
           <TransactionFormCard type="decaissement" />
-          <ListCard title={t("history")} empty={t("noExpenses")}>
-            {transactions.map((item) => (
+          <DataTable
+            loading={refreshing}
+            title={t("history")}
+            empty={t("noExpenses")}
+            heads={[t("category"), t("date"), t("activity"), t("mode"), t("amount"), t("actions")]}
+            rows={transactions.map((item) => [
+              item.categorie?.nom ?? "Depense",
+              date(item.date_transaction),
+              item.activite?.nom ?? "-",
+              item.mode_paiement,
+              money(item.montant),
               item.statut_validation === "en_attente" ? (
-                <ActionRow
-                  key={item.id}
-                  title={item.categorie?.nom ?? "Depense"}
-                  subtitle={`${date(item.date_transaction)} - ${item.activite?.nom ?? "-"} - ${money(item.montant)}`}
-                  value={t("pending")}
-                  actions={[
-                    [t("validate"), () => void validerTransactionMobile(item.id, "valide")],
-                    [t("reject"), () => void validerTransactionMobile(item.id, "rejete")],
-                  ]}
-                />
+                <View key="acts" style={{ flexDirection: "row", gap: 8 }}>
+                  <ActionIconButton icon="check" label={t("validate")} onPress={() => void validerTransactionMobile(item.id, "valide")} />
+                  <ActionIconButton icon="close" label={t("reject")} danger onPress={() => void validerTransactionMobile(item.id, "rejete")} />
+                </View>
               ) : (
-                <DataRow key={item.id} title={item.categorie?.nom ?? "Depense"} subtitle={`${date(item.date_transaction)} - ${item.activite?.nom ?? "-"} - ${item.mode_paiement}`} value={money(item.montant)} />
+                <Pill key="pill" value={t(item.statut_validation)} />
               )
-            ))}
-          </ListCard>
+            ])}
+          />
         </>
       );
     }
@@ -1046,11 +1073,19 @@ export default function App() {
             <Field label={t("movementDate")} value={mouvementDraft.date_mouvement} onChangeText={(value) => setMouvementDraft((draft) => ({ ...draft, date_mouvement: value }))} placeholder="YYYY-MM-DD" />
             <Pressable style={styles.primary} onPress={() => void submitMouvementMobile()}><Text style={styles.primaryText}>{t("save")}</Text></Pressable>
           </FormCard>
-          <ListCard title={t("articles")} empty={t("noArticles")}>
-            {articles.map((item) => (
-              <DataRow key={item.id} title={item.nom} subtitle={`${item.activite?.nom ?? "-"} - ${item.quantite} ${item.unite} - seuil ${item.seuil_alerte ?? "-"}`} value={money(Number(item.quantite) * Number(item.valeur_unitaire))} />
-            ))}
-          </ListCard>
+          <DataTable
+            loading={refreshing}
+            title={t("articles")}
+            empty={t("noArticles")}
+            heads={[t("name"), t("activity"), t("quantity"), t("unitValue"), t("total")]}
+            rows={articles.map((item) => [
+              item.nom,
+              item.activite?.nom ?? "-",
+              `${item.quantite} ${item.unite}`,
+              money(item.valeur_unitaire),
+              money(Number(item.quantite) * Number(item.valeur_unitaire))
+            ])}
+          />
         </>
       );
     }
@@ -1072,11 +1107,17 @@ export default function App() {
             <Stat label={t("decaissements")} value={money(rapport?.totaux?.decaissements)} />
             <Stat label={t("result")} value={money(rapport?.totaux?.resultat)} />
           </View>
-          <ListCard title={t("byActivity")} empty={t("noData")}>
-            {(rapport?.activites ?? []).map((item) => (
-              <DataRow key={item.id ?? item.code} title={item.nom} subtitle={item.type_activite ?? item.code} value={money(item.resultat)} />
-            ))}
-          </ListCard>
+          <DataTable
+            loading={refreshing}
+            title={t("byActivity")}
+            empty={t("noData")}
+            heads={[t("name"), t("type"), t("result")]}
+            rows={(rapport?.activites ?? []).map((item) => [
+              item.nom,
+              item.type_activite ?? item.code,
+              money(item.resultat)
+            ])}
+          />
         </>
       );
     }
@@ -1117,11 +1158,18 @@ export default function App() {
             </FormCard>
           )}
 
-          <ListCard title={t("accounts")} empty={t("noUsers")}>
-            {filteredUsers.map((item) => (
-              <DataRow key={item.id ?? item.email} title={item.nom} subtitle={`${item.email} - ${item.telephone ?? "-"}`} value={item.role?.nom ?? t("roleFallback")} />
-            ))}
-          </ListCard>
+          <DataTable
+            loading={refreshing}
+            title={t("accounts")}
+            empty={t("noUsers")}
+            heads={[t("name"), t("email"), t("phone"), t("role")]}
+            rows={filteredUsers.map((item) => [
+              item.nom,
+              item.email,
+              item.telephone ?? "-",
+              <Pill key="pill" value={item.role?.nom ?? t("roleFallback")} />
+            ])}
+          />
         </>
       );
     }
@@ -1182,21 +1230,21 @@ export default function App() {
             </FormCard>
           )}
 
-          <ListCard title={t("existingRoles")} empty={t("noData")}>
-            {filteredRoles.map((item) => (
-              <View key={item.id} style={styles.row}>
-                <View style={styles.rowText}>
-                  <Text style={styles.rowTitle}>{item.nom}</Text>
-                  <Text style={styles.rowSubtitle}>{item.description ?? ""}</Text>
-                </View>
-                <Text style={{ color: colors.blue, fontWeight: "700" }}>{`${item.permissions?.length ?? 0} ${t("permissions")}`}</Text>
-                <View style={styles.iconActions}>
-                  <ActionIconButton icon="edit" label={t("editRole")} onPress={() => { setRoleDraft({ id: item.id, nom: item.nom, description: item.description ?? "", permissions: item.permissions?.map((p) => p.id) ?? [] }); setShowRoleForm(true); }} />
-                  <ActionIconButton icon="delete" label={t("delete")} danger onPress={() => void deleteRoleMobile(item.id)} />
-                </View>
+          <DataTable
+            loading={refreshing}
+            title={t("existingRoles")}
+            empty={t("noData")}
+            heads={[t("name"), t("description"), t("permissions"), t("actions")]}
+            rows={filteredRoles.map((item) => [
+              item.nom,
+              item.description ?? "-",
+              <Pill key="pill" value={`${item.permissions?.length ?? 0} ${t("permissions")}`} />,
+              <View key="acts" style={{ flexDirection: "row", gap: 8 }}>
+                <ActionIconButton icon="edit" label={t("editRole")} onPress={() => { setRoleDraft({ id: item.id, nom: item.nom, description: item.description ?? "", permissions: item.permissions?.map((p) => p.id) ?? [] }); setShowRoleForm(true); }} />
+                <ActionIconButton icon="delete" label={t("delete")} danger onPress={() => void deleteRoleMobile(item.id)} />
               </View>
-            ))}
-          </ListCard>
+            ])}
+          />
         </>
       );
     }
@@ -1256,21 +1304,21 @@ export default function App() {
             </FormCard>
           )}
 
-          <ListCard title={t("existingPermissions")} empty={t("noData")}>
-            {filteredPermissions.map((item) => (
-              <View key={item.id} style={styles.row}>
-                <View style={styles.rowText}>
-                  <Text style={styles.rowTitle}>{item.nom}</Text>
-                  <Text style={styles.rowSubtitle}>{item.slug}</Text>
-                </View>
-                <Text style={{ color: colors.gold || "#f59e0b", fontWeight: "700" }}>{`${item.roles?.length ?? 0} rôle(s)`}</Text>
-                <View style={styles.iconActions}>
-                  <ActionIconButton icon="edit" label={t("editPermission")} onPress={() => { setPermissionDraft({ id: item.id, nom: item.nom, roles: item.roles?.map((r) => r.id) ?? [] }); setShowPermissionForm(true); }} />
-                  <ActionIconButton icon="delete" label={t("delete")} danger onPress={() => void deletePermissionMobile(item.id)} />
-                </View>
+          <DataTable
+            loading={refreshing}
+            title={t("existingPermissions")}
+            empty={t("noData")}
+            heads={[t("name"), t("slug"), t("roles"), t("actions")]}
+            rows={filteredPermissions.map((item) => [
+              item.nom,
+              item.slug,
+              <Pill key="pill" value={`${item.roles?.length ?? 0} rôle(s)`} />,
+              <View key="acts" style={{ flexDirection: "row", gap: 8 }}>
+                <ActionIconButton icon="edit" label={t("editPermission")} onPress={() => { setPermissionDraft({ id: item.id, nom: item.nom, roles: item.roles?.map((r) => r.id) ?? [] }); setShowPermissionForm(true); }} />
+                <ActionIconButton icon="delete" label={t("delete")} danger onPress={() => void deletePermissionMobile(item.id)} />
               </View>
-            ))}
-          </ListCard>
+            ])}
+          />
         </>
       );
     }
@@ -1292,16 +1340,17 @@ export default function App() {
             <Field label={t("dynamicFields")} value={typeDraft.schema_champs} onChangeText={(value) => setTypeDraft((draft) => ({ ...draft, schema_champs: value }))} placeholder={"plaque:texte\nnombre_tetes:nombre"} multiline />
             <Pressable style={styles.primary} onPress={() => void submitTypeActiviteMobile()}><Text style={styles.primaryText}>{t("save")}</Text></Pressable>
           </FormCard>
-          <ListCard title={t("configuredTypes")} empty={t("noTypes")}>
-            {typesActivites.map((item) => (
-              <DataRow
-                key={item.id}
-                title={item.nom}
-                subtitle={`${item.frequence_versement} - ${item.a_versement_recurrent ? t("recurrentInstallment") : t("withoutInstallment")}`}
-                value={item.actif ? `${item.activites_count ?? 0} ${t("actShort")}` : t("inactive")}
-              />
-            ))}
-          </ListCard>
+          <DataTable
+            loading={refreshing}
+            title={t("configuredTypes")}
+            empty={t("noTypes")}
+            heads={[t("name"), t("frequency"), t("status")]}
+            rows={typesActivites.map((item) => [
+              item.nom,
+              `${item.frequence_versement} - ${item.a_versement_recurrent ? t("recurrentInstallment") : t("withoutInstallment")}`,
+              <Pill key="pill" value={item.actif ? `${item.activites_count ?? 0} ${t("actShort")}` : t("inactive")} />
+            ])}
+          />
         </>
       );
     }
@@ -1310,15 +1359,22 @@ export default function App() {
       return (
         <>
           <SectionTitle title={t("notifications")} subtitle={t("notificationsSubtitle")} />
-          <ListCard title={t("alertCenter")} empty={t("noNotifications")}>
-            {notifications.map((item) => (
-              item.lu ? (
-                <DataRow key={item.id} title={item.titre} subtitle={item.message} value={t("read")} />
-              ) : (
-                <ActionRow key={item.id} title={item.titre} subtitle={item.message} value={item.type_notification} actions={[[t("markRead"), () => void marquerNotificationLue(item.id)]]} />
+          <DataTable
+            loading={refreshing}
+            title={t("alertCenter")}
+            empty={t("noNotifications")}
+            heads={[t("title"), t("message"), t("status"), t("actions")]}
+            rows={notifications.map((item) => [
+              item.titre,
+              item.message,
+              <Pill key="pill" value={item.lu ? t("read") : item.type_notification} />,
+              item.lu ? "-" : (
+                <View key="acts" style={{ flexDirection: "row", gap: 8 }}>
+                  <ActionIconButton icon="check" label={t("markRead")} onPress={() => void marquerNotificationLue(item.id)} />
+                </View>
               )
-            ))}
-          </ListCard>
+            ])}
+          />
         </>
       );
     }
@@ -1327,16 +1383,19 @@ export default function App() {
       return (
         <>
           <SectionTitle title={t("audit")} subtitle={t("auditSubtitle")} />
-          <ListCard title={t("lastActions")} empty={t("noActions")}>
-            {auditLogs.map((item) => (
-              <DataRow
-                key={item.id}
-                title={`${item.action} - ${item.entite}`}
-                subtitle={`${item.utilisateur?.nom ?? t("system")}${item.created_at ? ` - ${date(item.created_at)}` : ""}`}
-                value={item.entite_id ? `#${item.entite_id}` : "-"}
-              />
-            ))}
-          </ListCard>
+          <DataTable
+            loading={refreshing}
+            title={t("lastActions")}
+            empty={t("noActions")}
+            heads={[t("action"), t("entity"), t("user"), t("date"), "ID"]}
+            rows={auditLogs.map((item) => [
+              item.action,
+              item.entite,
+              item.utilisateur?.nom ?? t("system"),
+              item.created_at ? date(item.created_at) : "-",
+              item.entite_id ? `#${item.entite_id}` : "-"
+            ])}
+          />
         </>
       );
     }
@@ -1639,16 +1698,185 @@ function Stat({ label, value }: { label: string; value: string | number }) {
   );
 }
 
-function ListCard({ title, empty, children }: { title: string; empty: string; children: React.ReactNode }) {
+function SkeletonRow() {
+  const { colors } = useAppTheme();
+  const pulse = useRef(new Animated.Value(0.4)).current;
+
+  useEffect(() => {
+    const anim = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1, duration: 700, easing: linear, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 0.4, duration: 700, easing: linear, useNativeDriver: true }),
+      ])
+    );
+    anim.start();
+    return () => anim.stop();
+  }, [pulse]);
+
+  const skelColor = colors.line ?? "#dde5ef";
+
+  return (
+    <Animated.View
+      style={{
+        opacity: pulse,
+        flexDirection: "row",
+        alignItems: "center",
+        paddingVertical: 12,
+        paddingHorizontal: 4,
+        borderBottomWidth: 1,
+        borderBottomColor: skelColor + "55",
+        gap: 12,
+      }}
+    >
+      <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: skelColor, flexShrink: 0 }} />
+      <View style={{ flex: 1, gap: 6 }}>
+        <View style={{ height: 12, borderRadius: 6, backgroundColor: skelColor, width: "70%" }} />
+        <View style={{ height: 10, borderRadius: 5, backgroundColor: skelColor, width: "45%" }} />
+      </View>
+      <View style={{ height: 20, width: 52, borderRadius: 10, backgroundColor: skelColor }} />
+    </Animated.View>
+  );
+}
+
+function DataTable({
+  title,
+  heads,
+  rows,
+  loading = false,
+  empty = "Aucune donnée",
+  pageSize = 10,
+}: {
+  title?: string;
+  heads: string[];
+  rows: (string | number | React.ReactNode)[][];
+  loading?: boolean;
+  empty?: string;
+  pageSize?: number;
+}) {
+  const { styles, colors } = useAppTheme();
+  const [page, setPage] = useState(0);
+
+  const rowCount = rows.length;
+  const totalPages = Math.max(1, Math.ceil(rowCount / pageSize));
+  const safePage = Math.min(page, totalPages - 1);
+  const pagedRows = rows.slice(safePage * pageSize, safePage * pageSize + pageSize);
+  const effectiveEmpty = loading ? false : rowCount === 0;
+
+  const COL_WIDTH = 130;
+
+  const pulse = useRef(new Animated.Value(0.4)).current;
+  useEffect(() => {
+    if (!loading) return;
+    const anim = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1, duration: 700, easing: linear, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 0.4, duration: 700, easing: linear, useNativeDriver: true }),
+      ])
+    );
+    anim.start();
+    return () => anim.stop();
+  }, [loading, pulse]);
+  const skelColor = colors.line ?? "#dde5ef";
+
+  return (
+    <View style={[styles.card, { padding: 0, paddingBottom: 0, overflow: "hidden" }]}>
+      {title && <Text style={[styles.title, { padding: 16, paddingBottom: 8 }]}>{title}</Text>}
+      
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        <View style={{ flexDirection: "column", minWidth: "100%" }}>
+          {/* HEAD */}
+          <View style={{ flexDirection: "row", backgroundColor: colors.accentBg, borderBottomWidth: 1, borderBottomColor: colors.line }}>
+            {heads.map((h, i) => (
+              <View key={i} style={{ width: COL_WIDTH, padding: 12, justifyContent: "center" }}>
+                <Text style={{ color: colors.muted, fontSize: 11, fontWeight: "bold", textTransform: "uppercase" }}>{h}</Text>
+              </View>
+            ))}
+          </View>
+          
+          {/* SKELETON */}
+          {loading && (
+             <Animated.View style={{ opacity: pulse }}>
+               {[0, 1, 2].map((r) => (
+                 <View key={r} style={{ flexDirection: "row", borderBottomWidth: 1, borderBottomColor: colors.line }}>
+                    {heads.map((_, i) => (
+                      <View key={i} style={{ width: COL_WIDTH, padding: 14 }}>
+                        <View style={{ height: 12, backgroundColor: skelColor, borderRadius: 4, width: i === 0 ? "80%" : "60%" }} />
+                      </View>
+                    ))}
+                 </View>
+               ))}
+             </Animated.View>
+          )}
+
+          {/* EMPTY */}
+          {effectiveEmpty && !loading && (
+             <View style={{ padding: 24, alignItems: "center", width: heads.length * COL_WIDTH }}>
+               <Text style={{ color: colors.muted, fontStyle: "italic" }}>{empty}</Text>
+             </View>
+          )}
+
+          {/* ROWS */}
+          {!loading && !effectiveEmpty && pagedRows.map((row, i) => (
+             <View key={i} style={{ flexDirection: "row", borderBottomWidth: i === pagedRows.length - 1 ? 0 : 1, borderBottomColor: colors.line }}>
+               {row.map((cell, j) => (
+                 <View key={j} style={{ width: COL_WIDTH, padding: 12, justifyContent: "center" }}>
+                   {typeof cell === "string" || typeof cell === "number" ? (
+                     <Text style={{ color: colors.text, fontSize: 13 }} numberOfLines={2}>{cell}</Text>
+                   ) : (
+                     cell
+                   )}
+                 </View>
+               ))}
+             </View>
+          ))}
+        </View>
+      </ScrollView>
+      
+      {/* PAGINATION */}
+      {!loading && totalPages > 1 && (
+         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 12, borderTopWidth: 1, borderTopColor: colors.line, backgroundColor: colors.surface }}>
+            <Text style={{ color: colors.muted, fontSize: 12 }}>{rowCount} entrée(s)</Text>
+            <View style={{ flexDirection: "row", gap: 10 }}>
+               <Pressable disabled={safePage === 0} onPress={() => setPage(p => p - 1)} style={{ paddingHorizontal: 16, paddingVertical: 8, backgroundColor: safePage === 0 ? colors.accentBg : colors.surface, borderRadius: 6, borderWidth: 1, borderColor: colors.line }}>
+                 <Text style={{ color: safePage === 0 ? colors.muted : colors.text }}>{"<"}</Text>
+               </Pressable>
+               <Text style={{ color: colors.text, fontSize: 13, alignSelf: "center" }}>{safePage + 1} / {totalPages}</Text>
+               <Pressable disabled={safePage === totalPages - 1} onPress={() => setPage(p => p + 1)} style={{ paddingHorizontal: 16, paddingVertical: 8, backgroundColor: safePage === totalPages - 1 ? colors.accentBg : colors.surface, borderRadius: 6, borderWidth: 1, borderColor: colors.line }}>
+                 <Text style={{ color: safePage === totalPages - 1 ? colors.muted : colors.text }}>{">"}</Text>
+               </Pressable>
+            </View>
+         </View>
+      )}
+    </View>
+  );
+}
+
+function ListCard({ title, empty, loading = false, children }: { title: string; empty: string; loading?: boolean; children?: React.ReactNode }) {
   const { styles } = useAppTheme();
   const items = Array.isArray(children) ? children.filter(Boolean) : children;
   const isEmpty = Array.isArray(items) ? items.length === 0 : !items;
   return (
     <View style={styles.card}>
       <Text style={styles.title}>{title}</Text>
-      {isEmpty ? <Text style={styles.empty}>{empty}</Text> : items}
+      {loading ? (
+        <>
+          <SkeletonRow />
+          <SkeletonRow />
+          <SkeletonRow />
+        </>
+      ) : isEmpty ? (
+        <Text style={styles.empty}>{empty}</Text>
+      ) : (
+        items
+      )}
     </View>
   );
+}
+
+
+function Pill({ value }: { value: string | number }) {
+  const { styles } = useAppTheme();
+  return <Text style={[styles.pill, { alignSelf: "flex-start" }]} numberOfLines={1}>{value}</Text>;
 }
 
 function DataRow({ title, subtitle, value }: { title: string; subtitle: string; value: string | number }) {
@@ -1690,7 +1918,7 @@ function ActionRow({
   );
 }
 
-function ActionIconButton({ icon, label, danger = false, onPress }: { icon: "edit" | "delete"; label: string; danger?: boolean; onPress: () => void }) {
+function ActionIconButton({ icon, label, danger = false, onPress }: { icon: "edit" | "delete" | "check" | "close"; label: string; danger?: boolean; onPress: () => void }) {
   const { styles } = useAppTheme();
   return (
     <Pressable
@@ -1699,7 +1927,7 @@ function ActionIconButton({ icon, label, danger = false, onPress }: { icon: "edi
       accessibilityRole="button"
       accessibilityLabel={label}
     >
-      {icon === "edit" ? <EditIcon danger={danger} /> : <DeleteIcon danger={danger} />}
+      {icon === "edit" ? <EditIcon danger={danger} /> : icon === "delete" ? <DeleteIcon danger={danger} /> : icon === "check" ? <Text style={{ color: danger ? "red" : "#22c55e", fontWeight: "bold" }}>✓</Text> : <Text style={{ color: danger ? "red" : "#64748b", fontWeight: "bold" }}>✕</Text>}
     </Pressable>
   );
 }
@@ -2236,3 +2464,4 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
 });
+

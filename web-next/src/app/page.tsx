@@ -153,6 +153,8 @@ export default function Home() {
     setProgress(0);
     const timer = window.setInterval(() => setProgress((value) => Math.min(94, value + Math.ceil(Math.random() * 9))), 70);
     try {
+      /* Ralentissement artificiel (1.5s) pour voir le skeleton */
+      await new Promise((resolve) => setTimeout(resolve, 1500));
       await work();
       setProgress(100);
       await new Promise((resolve) => setTimeout(resolve, 220));
@@ -714,10 +716,14 @@ export default function Home() {
         <ChartGrid graphiques={dashboard.graphiques ?? []} compact />
         <Grid>
           <Panel title={t("recentActivities")}>
-            <Table heads={["Code", t("activities"), "Type", t("installments"), "Statut"]} rows={(dashboard.activites ?? []).map((a) => [a.code, a.nom, a.type_activite?.nom ?? "-", money(a.montant_versement), pill(a.statut)])} />
+            <Table
+                  loading={loading}
+                  heads={["Code", t("activities"), "Type", t("installments"), "Statut"]} rows={(dashboard.activites ?? []).map((a) => [a.code, a.nom, a.type_activite?.nom ?? "-", money(a.montant_versement), pill(a.statut)])} />
           </Panel>
           <Panel title={t("recentDeadlines")}>
-            <Table heads={[t("activities"), "Période", "Attendu", "Payé", "Statut"]} rows={(dashboard.echeances ?? []).map((e) => [e.activite?.code ?? "-", `${date(e.debut_periode)} - ${date(e.fin_periode)}`, money(e.montant_attendu), money(e.montant_paye), pill(e.statut)])} />
+            <Table
+                  loading={loading}
+                  heads={[t("activities"), "Période", "Attendu", "Payé", "Statut"]} rows={(dashboard.echeances ?? []).map((e) => [e.activite?.code ?? "-", `${date(e.debut_periode)} - ${date(e.fin_periode)}`, money(e.montant_attendu), money(e.montant_paye), pill(e.statut)])} />
           </Panel>
         </Grid>
       </>;
@@ -749,7 +755,9 @@ export default function Home() {
             </form>
           </Panel>
           <Panel title={t("activitiesList") ?? "Liste"}>
-            <Table heads={["Code", "Nom", "Type", "Gérant", t("installments"), "Statut"]} rows={activites.map((a) => [a.code, a.nom, a.type_activite?.nom ?? "-", a.gerant?.nom ?? "-", money(a.montant_versement), pill(a.statut)])} />
+            <Table
+                  loading={loading}
+                  heads={["Code", "Nom", "Type", "Gérant", t("installments"), "Statut"]} rows={activites.map((a) => [a.code, a.nom, a.type_activite?.nom ?? "-", a.gerant?.nom ?? "-", money(a.montant_versement), pill(a.statut)])} />
           </Panel>
         </Grid>
       </>;
@@ -773,7 +781,9 @@ export default function Home() {
             </form>
           </Panel>
           <Panel title={t("deadlines")}>
-            <Table heads={[t("activities"), "Période", "Attendu", "Payé", "Statut"]} rows={echeances.map((e) => [e.activite?.nom ?? "-", `${date(e.debut_periode)} - ${date(e.fin_periode)}`, money(e.montant_attendu), money(e.montant_paye), pill(e.statut)])} />
+            <Table
+                  loading={loading}
+                  heads={[t("activities"), "Période", "Attendu", "Payé", "Statut"]} rows={echeances.map((e) => [e.activite?.nom ?? "-", `${date(e.debut_periode)} - ${date(e.fin_periode)}`, money(e.montant_attendu), money(e.montant_paye), pill(e.statut)])} />
           </Panel>
         </Grid>
       </>;
@@ -796,7 +806,9 @@ export default function Home() {
             </form>
           </Panel>
           <Panel title={t("history")}>
-            <Table heads={["Date", t("activities"), "Catégorie", "Montant", "Statut", "Actions"]} rows={transactions.map((trx) => [date(trx.date_transaction), trx.activite?.nom ?? "-", trx.categorie?.nom ?? "-", money(trx.montant), pill(trx.statut_validation ?? "valide"), trx.statut_validation === "en_attente" ? <ActionGroup key={trx.id}><button onClick={() => void validerTransaction(trx.id, "valide")}>Valider</button><button onClick={() => void validerTransaction(trx.id, "rejete")}>Rejeter</button></ActionGroup> : trx.mode_paiement])} />
+            <Table
+                  loading={loading}
+                  heads={["Date", t("activities"), "Catégorie", "Montant", "Statut", "Actions"]} rows={transactions.map((trx) => [date(trx.date_transaction), trx.activite?.nom ?? "-", trx.categorie?.nom ?? "-", money(trx.montant), pill(trx.statut_validation ?? "valide"), trx.statut_validation === "en_attente" ? <ActionGroup key={trx.id}><button onClick={() => void validerTransaction(trx.id, "valide")}>Valider</button><button onClick={() => void validerTransaction(trx.id, "rejete")}>Rejeter</button></ActionGroup> : trx.mode_paiement])} />
           </Panel>
         </Grid>
       </>;
@@ -830,7 +842,9 @@ export default function Home() {
           </Panel>
         </Grid>
         <Panel title={t("articles")}>
-          <Table heads={[t("activities"), "Article", "Type", "Quantité", "Seuil", "Valeur"]} rows={articles.map((a) => [a.activite?.nom ?? "-", a.nom, pill(a.type_article), `${a.quantite} ${a.unite}`, a.seuil_alerte ?? "-", money(Number(a.quantite) * Number(a.valeur_unitaire))])} />
+          <Table
+                  loading={loading}
+                  heads={[t("activities"), "Article", "Type", "Quantité", "Seuil", "Valeur"]} rows={articles.map((a) => [a.activite?.nom ?? "-", a.nom, pill(a.type_article), `${a.quantite} ${a.unite}`, a.seuil_alerte ?? "-", money(Number(a.quantite) * Number(a.valeur_unitaire))])} />
         </Panel>
       </>;
     }
@@ -849,7 +863,9 @@ export default function Home() {
           <Card label={t("result")} value={money(rapport?.totaux?.resultat)} />
         </div>
         <Panel title={t("byActivity")}>
-          <Table heads={["Code", t("activities"), "Type", t("income"), t("decaissements"), t("result")]} rows={(rapport?.activites ?? []).map((a) => [a.code, a.nom, a.type_activite ?? "-", money(a.revenus), money(a.decaissements), money(a.resultat)])} />
+          <Table
+                  loading={loading}
+                  heads={["Code", t("activities"), "Type", t("income"), t("decaissements"), t("result")]} rows={(rapport?.activites ?? []).map((a) => [a.code, a.nom, a.type_activite ?? "-", money(a.revenus), money(a.decaissements), money(a.resultat)])} />
         </Panel>
       </>;
     }
@@ -871,7 +887,9 @@ export default function Home() {
             </form>
           </Panel>
           <Panel title={t("configuredTypes") ?? "Types configurés"}>
-            <Table heads={["Type", "Fréquence", "Versement", "Activités", "Statut"]} rows={typesActivites.map((t) => [t.nom, t.frequence_versement, t.a_versement_recurrent ? "Oui" : "Non", t.activites_count ?? 0, pill(t.actif ? "actif" : "inactif")])} />
+            <Table
+                  loading={loading}
+                  heads={["Type", "Fréquence", "Versement", "Activités", "Statut"]} rows={typesActivites.map((t) => [t.nom, t.frequence_versement, t.a_versement_recurrent ? "Oui" : "Non", t.activites_count ?? 0, pill(t.actif ? "actif" : "inactif")])} />
           </Panel>
         </Grid>
       </>;
@@ -896,7 +914,9 @@ export default function Home() {
             </form>
           </Panel>
           <Panel title="Liste des comptes">
-            <Table heads={["Nom", "Email", "Rôle", "Téléphone", "Statut"]} rows={utilisateurs.map((u) => [u.nom, u.email, u.role?.nom ?? "-", u.telephone ?? "-", pill(u.statut ?? "actif")])} />
+            <Table
+                  loading={loading}
+                  heads={["Nom", "Email", "Rôle", "Téléphone", "Statut"]} rows={utilisateurs.map((u) => [u.nom, u.email, u.role?.nom ?? "-", u.telephone ?? "-", pill(u.statut ?? "actif")])} />
           </Panel>
         </Grid>
       </>;
@@ -949,8 +969,9 @@ export default function Home() {
         )}
 
         <Panel title={t("roles")}>
-          <Table 
-            heads={["Nom", "Description", "Permissions", "Actions"]} 
+          <Table
+                  loading={loading}
+                  heads={["Nom", "Description", "Permissions", "Actions"]} 
             rows={roles.map(r => [
               <strong>{r.nom}</strong>, 
               r.description ?? "-", 
@@ -1011,7 +1032,8 @@ export default function Home() {
 
         <Panel title={t("existingPermissions")}>
           <Table
-            heads={["Nom", "Slug", t("roles"), "Actions"]}
+                  loading={loading}
+                  heads={["Nom", "Slug", t("roles"), "Actions"]}
             rows={permissions.map(p => [
               <strong>{p.nom}</strong>,
               p.slug ?? "-",
@@ -1030,7 +1052,9 @@ export default function Home() {
       return <>
         <PageTitle title="Notifications" subtitle="Alertes de retard, stock et rapports." />
         <Panel title="Centre d'alertes">
-          <Table heads={["Type", "Titre", "Message", "Statut", "Action"]} rows={notifications.map((n) => [pill(n.type_notification), n.titre, n.message, n.lu ? "Lue" : pill("en_attente"), n.lu ? "-" : <button className="btn mini" key={n.id} onClick={() => void marquerNotificationLue(n.id)}>Marquer lue</button>])} />
+          <Table
+                  loading={loading}
+                  heads={["Type", "Titre", "Message", "Statut", "Action"]} rows={notifications.map((n) => [pill(n.type_notification), n.titre, n.message, n.lu ? "Lue" : pill("en_attente"), n.lu ? "-" : <button className="btn mini" key={n.id} onClick={() => void marquerNotificationLue(n.id)}>Marquer lue</button>])} />
         </Panel>
       </>;
     }
@@ -1039,7 +1063,9 @@ export default function Home() {
       return <>
         <PageTitle title="Journal d'audit" subtitle="Traçabilité des actions sensibles." />
         <Panel title="Dernières actions">
-          <Table heads={["Date", "Utilisateur", "Action", "Entité", "IP"]} rows={auditLogs.map((log) => [log.created_at ? date(log.created_at) : "-", log.utilisateur?.nom ?? "-", log.action, `${log.entite}${log.entite_id ? ` #${log.entite_id}` : ""}`, log.adresse_ip ?? "-"])} />
+          <Table
+                  loading={loading}
+                  heads={["Date", "Utilisateur", "Action", "Entité", "IP"]} rows={auditLogs.map((log) => [log.created_at ? date(log.created_at) : "-", log.utilisateur?.nom ?? "-", log.action, `${log.entite}${log.entite_id ? ` #${log.entite_id}` : ""}`, log.adresse_ip ?? "-"])} />
         </Panel>
       </>;
     }
@@ -1215,8 +1241,261 @@ function IconButton({ label, icon, tone = "default", onClick }: { label: string;
   );
 }
 
-function Table({ heads, rows }: { heads: string[]; rows: ReactNode[][] }) {
-  return <div className="table-wrap"><table><thead><tr>{heads.map((h) => <th key={h}>{h}</th>)}</tr></thead><tbody>{rows.length ? rows.map((row, i) => <tr key={i}>{row.map((cell, j) => <td key={j}>{cell}</td>)}</tr>) : <tr><td colSpan={heads.length}>Aucune donnée.</td></tr>}</tbody></table></div>;
+/* ─── DataTable skeleton shimmer keyframes (injected once) ─── */
+const DT_STYLE_ID = "koue-datatable-styles-client";
+if (typeof document !== "undefined" && !document.getElementById(DT_STYLE_ID)) {
+  const s = document.createElement("style");
+  s.id = DT_STYLE_ID;
+  s.textContent = `
+    @keyframes koue-shimmer {
+      0%   { background-position: -400px 0; }
+      100% { background-position:  400px 0; }
+    }
+    .koue-skel {
+      display: inline-block;
+      width: 100%;
+      height: 14px;
+      border-radius: 6px;
+      background: linear-gradient(90deg,
+        var(--accent-bg) 25%,
+        var(--line)   50%,
+        var(--accent-bg) 75%
+      );
+      background-size: 400px 100%;
+      animation: koue-shimmer 1.4s ease-in-out infinite;
+    }
+    .koue-skel-sm  { height: 10px; width: 60%; }
+    .koue-skel-xs  { height: 10px; width: 40%; }
+    .koue-th-sort:hover { color: var(--primary-light) !important; }
+    .koue-th-sort { cursor: pointer; user-select: none; }
+    .koue-tr:hover td { background: var(--accent-bg); }
+    .koue-dt-page-btn {
+      padding: 5px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--line);
+      background: var(--surface);
+      color: var(--muted);
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .koue-dt-page-btn:hover:not(:disabled) { border-color: var(--blue); color: var(--blue); }
+    .koue-dt-page-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+    .koue-dt-page-active {
+      background: var(--blue);
+      border-color: var(--blue);
+      color: #fff;
+    }
+  `;
+  document.head.appendChild(s);
+}
+
+const PAGE_SIZE_DEFAULT = 10;
+
+function Table({
+  heads,
+  rows,
+  loading = false,
+  pageSize = PAGE_SIZE_DEFAULT,
+  sortable = true,
+}: {
+  heads: string[];
+  rows: ReactNode[][];
+  loading?: boolean;
+  pageSize?: number;
+  sortable?: boolean;
+}) {
+  const [sortCol, setSortCol] = useState<number | null>(null);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [page, setPage] = useState(0);
+
+  const rowCount = rows.length;
+  const totalPages = Math.max(1, Math.ceil(rowCount / pageSize));
+  const safePage = Math.min(page, totalPages - 1);
+  const pagedRows = rows.slice(safePage * pageSize, safePage * pageSize + pageSize);
+  const effectiveEmpty = loading ? false : rowCount === 0;
+
+  const handleSort = (idx: number) => {
+    if (!sortable) return;
+    if (sortCol === idx) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortCol(idx);
+      setSortDir("asc");
+    }
+    setPage(0);
+  };
+
+  const sortIcon = (idx: number) => {
+    if (sortCol !== idx) return <span style={{ opacity: 0.3, marginLeft: 4, fontSize: 10 }}>⇅</span>;
+    return <span style={{ marginLeft: 4, fontSize: 10, color: "var(--blue)" }}>{sortDir === "asc" ? "▲" : "▼"}</span>;
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 0, marginTop: 12 }}>
+      <div
+        style={{
+          overflowX: "auto",
+          background: "var(--surface)",
+          border: "1px solid var(--line)",
+          borderRadius: 14,
+          borderBottomLeftRadius: rowCount > pageSize ? 0 : 14,
+          borderBottomRightRadius: rowCount > pageSize ? 0 : 14,
+        }}
+      >
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+          <thead>
+            <tr style={{ background: "var(--accent-bg)" }}>
+              {heads.map((h, i) => (
+                <th
+                  key={h}
+                  onClick={() => handleSort(i)}
+                  className={sortable ? "koue-th-sort" : ""}
+                  style={{
+                    textAlign: "left",
+                    padding: "12px 16px",
+                    color: sortCol === i ? "var(--primary-light)" : "var(--muted)",
+                    fontSize: 11,
+                    textTransform: "uppercase",
+                    letterSpacing: 1,
+                    fontWeight: 700,
+                    borderBottom: "1px solid var(--line)",
+                    whiteSpace: "nowrap",
+                    transition: "color 0.15s",
+                  }}
+                >
+                  {h}{sortable && sortIcon(i)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {/* ── Skeleton loading ── */}
+            {loading && (
+              <>
+                {[0, 1, 2].map((skIdx) => (
+                  <tr key={`sk-${skIdx}`} style={{ borderBottom: "1px solid var(--line)" }}>
+                    {heads.map((_, ci) => (
+                      <td key={ci} style={{ padding: "14px 16px" }}>
+                        {ci === 0 ? (
+                          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                            <div
+                              className="koue-skel"
+                              style={{
+                                width: 28,
+                                height: 28,
+                                borderRadius: "50%",
+                                flexShrink: 0,
+                                animationDelay: `${skIdx * 0.15}s`,
+                              }}
+                            />
+                            <div style={{ flex: 1 }}>
+                              <div className="koue-skel" style={{ animationDelay: `${skIdx * 0.15}s` }} />
+                            </div>
+                          </div>
+                        ) : (
+                          <div
+                            className={`koue-skel ${ci % 2 === 0 ? "koue-skel-sm" : "koue-skel-xs"}`}
+                            style={{ animationDelay: `${skIdx * 0.15 + ci * 0.05}s` }}
+                          />
+                        )}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </>
+            )}
+
+            {/* ── Empty state ── */}
+            {!loading && effectiveEmpty && (
+              <tr>
+                <td
+                  colSpan={heads.length}
+                  style={{
+                    padding: "40px 16px",
+                    color: "var(--muted)",
+                    fontStyle: "italic",
+                    textAlign: "center",
+                  }}
+                >
+                  Aucune donnée trouvée.
+                </td>
+              </tr>
+            )}
+
+            {/* ── Data rows (paginated) ── */}
+            {!loading && !effectiveEmpty && pagedRows.map((row, i) => (
+              <tr key={i} className="koue-tr">
+                {row.map((cell, j) => (
+                  <td key={j} style={{ padding: "14px 16px", borderBottom: "1px solid var(--line)" }}>{cell}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* ── Footer: count + pagination ── */}
+      {!loading && rowCount > 0 && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "10px 16px",
+            background: "var(--surface)",
+            border: "1px solid var(--line)",
+            borderTop: "none",
+            borderRadius: "0 0 14px 14px",
+            flexWrap: "wrap",
+            gap: 8,
+          }}
+        >
+          <span style={{ color: "var(--muted)", fontSize: 12 }}>
+            {rowCount} entrée{rowCount > 1 ? "s" : ""}
+          </span>
+          {totalPages > 1 && (
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <button
+                className="koue-dt-page-btn"
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+                disabled={safePage === 0}
+              >
+                ‹
+              </button>
+              {Array.from({ length: totalPages }, (_, i) => i)
+                .filter((i) => i === 0 || i === totalPages - 1 || Math.abs(i - safePage) <= 1)
+                .reduce<(number | "…")[]>((acc, i, idx, arr) => {
+                  if (idx > 0 && (i as number) - (arr[idx - 1] as number) > 1) acc.push("…");
+                  acc.push(i);
+                  return acc;
+                }, [])
+                .map((item, i) =>
+                  item === "…" ? (
+                    <span key={`e-${i}`} style={{ color: "var(--muted)", fontSize: 13 }}>…</span>
+                  ) : (
+                    <button
+                      key={item}
+                      className={`koue-dt-page-btn ${item === safePage ? "koue-dt-page-active" : ""}`}
+                      onClick={() => setPage(item as number)}
+                    >
+                      {(item as number) + 1}
+                    </button>
+                  )
+                )}
+              <button
+                className="koue-dt-page-btn"
+                onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                disabled={safePage === totalPages - 1}
+              >
+                ›
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function Select({ name, label, items, optional = false }: { name: string; label: string; items: Named[]; optional?: boolean }) {
@@ -1265,3 +1544,4 @@ function parseSchema(value: string) {
       .filter(([cle]) => Boolean(cle)),
   );
 }
+

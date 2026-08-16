@@ -347,6 +347,9 @@ export default function AdminPage() {
   async function refresh() {
     setLoading(true);
     try {
+      /* Ralentissement artificiel pour voir le skeleton loading (1.5s) */
+      await new Promise((r) => setTimeout(r, 1500));
+
       const [p, r, a, pm] = await Promise.all([
         callApi<{ donnees: Plateforme[] }>("plateformes"),
         callApi<{ roles: Role[]; types_activites: TypeActivite[] }>(
@@ -378,6 +381,9 @@ export default function AdminPage() {
     setLoading(true);
     setDetailTab("infos");
     try {
+      /* Ralentissement artificiel pour voir le skeleton loading (1.5s) */
+      await new Promise((r) => setTimeout(r, 1500));
+
       const [u, a, pt, pc] = await Promise.all([
         callApi<{ donnees: UserItem[] }>(`utilisateurs?plateforme_id=${p.id}`),
         callApi<{ donnees: Activite[] }>(`activites?plateforme_id=${p.id}`),
@@ -476,6 +482,8 @@ export default function AdminPage() {
   async function loadRoles() {
     setLoading(true);
     try {
+      /* Ralentissement artificiel (1.5s) */
+      await new Promise((r) => setTimeout(r, 1500));
       const r = await callApi<{ donnees: Role[]; permissions: Permission[] }>("roles");
       setRoles(r.donnees ?? []);
       setPermissions(r.permissions ?? []);
@@ -489,6 +497,8 @@ export default function AdminPage() {
   async function loadPermissions() {
     setLoading(true);
     try {
+      /* Ralentissement artificiel (1.5s) */
+      await new Promise((r) => setTimeout(r, 1500));
       const r = await callApi<{ donnees: Permission[]; roles: Role[] }>("permissions");
       setPermissions(r.donnees ?? []);
       setRoles(r.roles ?? []);
@@ -502,6 +512,8 @@ export default function AdminPage() {
   async function loadUsers() {
     setLoading(true);
     try {
+      /* Ralentissement artificiel (1.5s) */
+      await new Promise((r) => setTimeout(r, 1500));
       const r = await callApi<{ donnees: UserItem[] }>("utilisateurs");
       setUsers(r.donnees ?? []);
       const r2 = await callApi<{ donnees: Role[] }>("roles");
@@ -1916,7 +1928,8 @@ export default function AdminPage() {
                 badge={filteredPlateformes.length}
               />
               <TTable
-                heads={[
+                  loading={loading}
+                  heads={[
                   "Plateforme",
                   "Statut",
                   "Utilisateurs",
@@ -2486,7 +2499,8 @@ export default function AdminPage() {
                     </PBtn>
                   </div>
                   <TTable
-                    heads={[
+                  loading={loading}
+                  heads={[
                       "Nom",
                       "Email",
                       "Rôle",
@@ -2609,7 +2623,8 @@ export default function AdminPage() {
                     <PBtn onClick={() => setMType(true)}>+ Nouveau type</PBtn>
                   </div>
                   <TTable
-                    heads={[
+                  loading={loading}
+                  heads={[
                       "Nom",
                       "Récurrent",
                       "Fréquence",
@@ -2702,7 +2717,8 @@ export default function AdminPage() {
                     </PBtn>
                   </div>
                   <TTable
-                    heads={[
+                  loading={loading}
+                  heads={[
                       "Nom",
                       "Nature",
                       "Business lié",
@@ -2791,7 +2807,8 @@ export default function AdminPage() {
                     </PBtn>
                   </div>
                   <TTable
-                    heads={[
+                  loading={loading}
+                  heads={[
                       "Code",
                       "Nom",
                       "Type",
@@ -2978,7 +2995,8 @@ export default function AdminPage() {
                       </div>
                       {rapport.activites && rapport.activites.length > 0 && (
                         <TTable
-                          heads={[
+                  loading={loading}
+                  heads={[
                             "Code",
                             "Activité",
                             "Revenus",
@@ -3049,7 +3067,8 @@ export default function AdminPage() {
                     }
                   />
                   <TTable
-                    heads={[
+                  loading={loading}
+                  heads={[
                       "Date",
                       "Activité",
                       "Catégorie",
@@ -3115,7 +3134,8 @@ export default function AdminPage() {
                 <div>
                   <SectionTitle title="Échéances" badge={echeances.length} />
                   <TTable
-                    heads={[
+                  loading={loading}
+                  heads={[
                       "Activité",
                       "Période",
                       "Attendu",
@@ -3183,7 +3203,8 @@ export default function AdminPage() {
                 <div>
                   <SectionTitle title="Inventaire" badge={articles.length} />
                   <TTable
-                    heads={[
+                  loading={loading}
+                  heads={[
                       "Article",
                       "Type",
                       "Quantité",
@@ -3283,7 +3304,8 @@ export default function AdminPage() {
                     </PBtn>
                   </div>
                   <TTable
-                    heads={["Titre", "Message", "Type", "Lu"]}
+                  loading={loading}
+                  heads={["Titre", "Message", "Type", "Lu"]}
                     empty={notifs.length === 0}
                     emptyMsg="Aucune notification."
                   >
@@ -3694,7 +3716,8 @@ export default function AdminPage() {
               </FiltreBox>
 
               <TTable
-                heads={["Action", "Entité", "ID", "Utilisateur", "IP", "Date"]}
+                  loading={loading}
+                  heads={["Action", "Entité", "ID", "Utilisateur", "IP", "Date"]}
                 empty={filteredAudits.length === 0}
                 emptyMsg="Aucune action pour ces filtres."
               >
@@ -3890,6 +3913,7 @@ export default function AdminPage() {
                 />
               ) : (
                 <TTable
+                  loading={loading}
                   heads={["Nom", "Slug", "Description", "Permissions", "Actions"]}
                   empty={roles.length === 0}
                   emptyMsg="Aucun rôle disponible."
@@ -4007,6 +4031,7 @@ export default function AdminPage() {
                 />
               ) : (
                 <TTable
+                  loading={loading}
                   heads={["Nom", "Slug", "Rôles assignés", "Actions"]}
                   empty={permissions.length === 0}
                   emptyMsg="Aucune permission disponible."
@@ -4120,6 +4145,7 @@ export default function AdminPage() {
                 />
               ) : (
                 <TTable
+                  loading={loading}
                   heads={["Nom", "Email", "Rôle", "Statut", "Dernière connexion", "Actions"]}
                   empty={users.length === 0}
                   emptyMsg="Aucun utilisateur."
@@ -5212,73 +5238,271 @@ function DgBtn({
   );
 }
 
+/* ─── DataTable skeleton shimmer keyframes (injected once) ─── */
+const DT_STYLE_ID = "koue-datatable-styles";
+if (typeof document !== "undefined" && !document.getElementById(DT_STYLE_ID)) {
+  const s = document.createElement("style");
+  s.id = DT_STYLE_ID;
+  s.textContent = `
+    @keyframes koue-shimmer {
+      0%   { background-position: -400px 0; }
+      100% { background-position:  400px 0; }
+    }
+    .koue-skel {
+      display: inline-block;
+      width: 100%;
+      height: 14px;
+      border-radius: 6px;
+      background: linear-gradient(90deg,
+        ${C.surface2} 25%,
+        ${C.border}   50%,
+        ${C.surface2} 75%
+      );
+      background-size: 400px 100%;
+      animation: koue-shimmer 1.4s ease-in-out infinite;
+    }
+    .koue-skel-sm  { height: 10px; width: 60%; }
+    .koue-skel-xs  { height: 10px; width: 40%; }
+    .koue-th-sort:hover { color: ${C.primaryLight} !important; }
+    .koue-th-sort { cursor: pointer; user-select: none; }
+    .koue-tr:hover td { background: ${C.surface2}18; }
+    .koue-dt-page-btn {
+      padding: 5px 12px;
+      border-radius: 6px;
+      border: 1px solid ${C.border};
+      background: ${C.surface2};
+      color: ${C.textMuted};
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .koue-dt-page-btn:hover:not(:disabled) { border-color: ${C.primary}; color: ${C.primary}; }
+    .koue-dt-page-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+    .koue-dt-page-active {
+      background: ${C.primary};
+      border-color: ${C.primary};
+      color: #fff;
+    }
+  `;
+  document.head.appendChild(s);
+}
+
+const PAGE_SIZE_DEFAULT = 10;
+
 function TTable({
   heads,
   empty,
   emptyMsg,
   children,
+  loading = false,
+  pageSize = PAGE_SIZE_DEFAULT,
+  sortable = true,
 }: {
   heads: string[];
   empty: boolean;
   emptyMsg: string;
   children: ReactNode;
+  loading?: boolean;
+  pageSize?: number;
+  sortable?: boolean;
 }) {
+  const [sortCol, setSortCol] = useState<number | null>(null);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [page, setPage] = useState(0);
+
+  /* When loading, treat as non-empty to avoid flash of "no data" message */
+  const effectiveEmpty = loading ? false : empty;
+
+  /* collect data rows from children */
+  const rows = Array.isArray(children)
+    ? (children as ReactNode[]).flat().filter(Boolean)
+    : children
+    ? [children]
+    : [];
+
+  /* reset page when data changes */
+  const rowCount = rows.length;
+  const totalPages = Math.max(1, Math.ceil(rowCount / pageSize));
+  const safePage = Math.min(page, totalPages - 1);
+  const pagedRows = rows.slice(safePage * pageSize, safePage * pageSize + pageSize);
+
+  const handleSort = (idx: number) => {
+    if (!sortable) return;
+    if (sortCol === idx) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortCol(idx);
+      setSortDir("asc");
+    }
+    setPage(0);
+  };
+
+  const sortIcon = (idx: number) => {
+    if (sortCol !== idx) return <span style={{ opacity: 0.3, marginLeft: 4, fontSize: 10 }}>⇅</span>;
+    return <span style={{ marginLeft: 4, fontSize: 10, color: C.primary }}>{sortDir === "asc" ? "▲" : "▼"}</span>;
+  };
+
   return (
-    <div
-      style={{
-        overflowX: "auto",
-        background: C.surface,
-        border: `1px solid ${C.border}`,
-        borderRadius: 14,
-      }}
-    >
-      <table
-        style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}
+    <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+      <div
+        style={{
+          overflowX: "auto",
+          background: C.surface,
+          border: `1px solid ${C.border}`,
+          borderRadius: 14,
+          borderBottomLeftRadius: rowCount > pageSize ? 0 : 14,
+          borderBottomRightRadius: rowCount > pageSize ? 0 : 14,
+        }}
       >
-        <thead>
-          <tr style={{ background: C.surface2 }}>
-            {heads.map((h) => (
-              <th
-                key={h}
-                style={{
-                  textAlign: "left",
-                  padding: "12px 16px",
-                  color: C.textDim,
-                  fontSize: 11,
-                  textTransform: "uppercase",
-                  letterSpacing: 1,
-                  fontWeight: 700,
-                  borderBottom: `1px solid ${C.border}`,
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {h}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {empty && (
-            <tr>
-              <td
-                colSpan={heads.length}
-                style={{
-                  padding: "28px 16px",
-                  color: C.textDim,
-                  fontStyle: "italic",
-                  textAlign: "center",
-                }}
-              >
-                {emptyMsg}
-              </td>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+          <thead>
+            <tr style={{ background: C.surface2 }}>
+              {heads.map((h, i) => (
+                <th
+                  key={h}
+                  onClick={() => handleSort(i)}
+                  className={sortable ? "koue-th-sort" : ""}
+                  style={{
+                    textAlign: "left",
+                    padding: "12px 16px",
+                    color: sortCol === i ? C.primaryLight : C.textDim,
+                    fontSize: 11,
+                    textTransform: "uppercase",
+                    letterSpacing: 1,
+                    fontWeight: 700,
+                    borderBottom: `1px solid ${C.border}`,
+                    whiteSpace: "nowrap",
+                    transition: "color 0.15s",
+                  }}
+                >
+                  {h}{sortable && sortIcon(i)}
+                </th>
+              ))}
             </tr>
+          </thead>
+          <tbody>
+            {/* ── Skeleton loading ── */}
+            {loading && (
+              <>
+                {[0, 1, 2].map((skIdx) => (
+                  <tr key={`sk-${skIdx}`} style={{ borderBottom: `1px solid ${C.border}20` }}>
+                    {heads.map((_, ci) => (
+                      <td key={ci} style={{ padding: "14px 16px" }}>
+                        {ci === 0 ? (
+                          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                            <div
+                              className="koue-skel"
+                              style={{
+                                width: 28,
+                                height: 28,
+                                borderRadius: "50%",
+                                flexShrink: 0,
+                                animationDelay: `${skIdx * 0.15}s`,
+                              }}
+                            />
+                            <div style={{ flex: 1 }}>
+                              <div className="koue-skel" style={{ animationDelay: `${skIdx * 0.15}s` }} />
+                            </div>
+                          </div>
+                        ) : (
+                          <div
+                            className={`koue-skel ${ci % 2 === 0 ? "koue-skel-sm" : "koue-skel-xs"}`}
+                            style={{ animationDelay: `${skIdx * 0.15 + ci * 0.05}s` }}
+                          />
+                        )}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </>
+            )}
+
+            {/* ── Empty state ── */}
+            {!loading && effectiveEmpty && (
+              <tr>
+                <td
+                  colSpan={heads.length}
+                  style={{
+                    padding: "40px 16px",
+                    color: C.textDim,
+                    fontStyle: "italic",
+                    textAlign: "center",
+                  }}
+                >
+                  {emptyMsg}
+                </td>
+              </tr>
+            )}
+
+            {/* ── Data rows (paginated) ── */}
+            {!loading && !effectiveEmpty && pagedRows}
+          </tbody>
+        </table>
+      </div>
+
+      {/* ── Footer: count + pagination ── */}
+      {!loading && rowCount > 0 && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "10px 16px",
+            background: C.surface,
+            border: `1px solid ${C.border}`,
+            borderTop: "none",
+            borderRadius: "0 0 14px 14px",
+            flexWrap: "wrap",
+            gap: 8,
+          }}
+        >
+          <span style={{ color: C.textDim, fontSize: 12 }}>
+            {rowCount} entrée{rowCount > 1 ? "s" : ""}
+          </span>
+          {totalPages > 1 && (
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <button
+                className="koue-dt-page-btn"
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+                disabled={safePage === 0}
+              >
+                ‹
+              </button>
+              {Array.from({ length: totalPages }, (_, i) => i)
+                .filter((i) => i === 0 || i === totalPages - 1 || Math.abs(i - safePage) <= 1)
+                .reduce<(number | "…")[]>((acc, i, idx, arr) => {
+                  if (idx > 0 && (i as number) - (arr[idx - 1] as number) > 1) acc.push("…");
+                  acc.push(i);
+                  return acc;
+                }, [])
+                .map((item, i) =>
+                  item === "…" ? (
+                    <span key={`e-${i}`} style={{ color: C.textDim, fontSize: 13 }}>…</span>
+                  ) : (
+                    <button
+                      key={item}
+                      className={`koue-dt-page-btn ${item === safePage ? "koue-dt-page-active" : ""}`}
+                      onClick={() => setPage(item as number)}
+                    >
+                      {(item as number) + 1}
+                    </button>
+                  )
+                )}
+              <button
+                className="koue-dt-page-btn"
+                onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                disabled={safePage === totalPages - 1}
+              >
+                ›
+              </button>
+            </div>
           )}
-          {children}
-        </tbody>
-      </table>
+        </div>
+      )}
     </div>
   );
 }
+
 
 function Moda({
   title,
@@ -5860,3 +6084,4 @@ function EmptyState({
     </div>
   );
 }
+
