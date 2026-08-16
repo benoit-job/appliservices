@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
+import { CSSProperties, FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
 import Swal from "sweetalert2";
 import { type Language, getTranslation } from "./translations";
 import { ChartGrid } from "../components/ChartPanel";
@@ -11,7 +11,8 @@ import { applyTheme, DEFAULT_THEME_ID, THEME_STORAGE_KEY, themes, type ThemeId }
 
 
 type ApiResponse<T> = T & { statut: "ok" | "erreur"; message?: string };
-type Role = { id: number; nom: string; slug?: string };
+type Permission = { id: number; nom: string; slug: string; roles?: Role[] };
+type Role = { id: number; nom: string; slug?: string; description?: string; permissions?: Permission[] };
 type User = { id: number; role_id?: number; nom: string; email: string; telephone?: string; statut?: string; derniere_connexion?: string; role?: { nom: string }; plateforme?: { id?: number; nom?: string; slug?: string; email_contact?: string; telephone_contact?: string; adresse?: string; image_url?: string | null; statut?: string; limite_utilisateurs?: number; limite_activites?: number } };
 type Resume = { activites: number; revenus: number; decaissements: number; resultat: number; retards: number; inventaire: number };
 type TypeActivite = { id: number; nom: string; slug: string; a_versement_recurrent: boolean; frequence_versement: string; schema_champs?: Record<string, string> | null; icone?: string; couleur?: string; actif: boolean; activites_count?: number };
@@ -69,6 +70,10 @@ export default function Home() {
   const [rapport, setRapport] = useState<Rapport | null>(null);
   const [utilisateurs, setUtilisateurs] = useState<User[]>([]);
   const [typesActivites, setTypesActivites] = useState<TypeActivite[]>([]);
+  const [roles, setRoles] = useState<Role[]>([]);
+  const [permissions, setPermissions] = useState<Permission[]>([]);
+  const [roleDraft, setRoleDraft] = useState<{ id?: number; nom: string; description: string; permissions: number[] } | null>(null);
+  const [permissionDraft, setPermissionDraft] = useState<{ id?: number; nom: string; roles: number[] } | null>(null);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [parametres, setParametres] = useState<Parametre[]>([]);
@@ -77,8 +82,10 @@ export default function Home() {
   
   const [lang, setLang] = useState<Language>("fr");
   const [langMenuOpen, setLangMenuOpen] = useState(false);
+  const [usersMenuOpen, setUsersMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [notifPopupOpen, setNotifPopupOpen] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
 
   const t = (key: Parameters<typeof getTranslation>[1]) => getTranslation(lang, key);
@@ -190,6 +197,16 @@ export default function Home() {
       if (nextRoute === "rapports") setRapport((await api<{ donnees: Rapport }>("rapports/bilan")).donnees);
       if (nextRoute === "types-activites") setTypesActivites((await api<{ donnees: TypeActivite[] }>("types-activites")).donnees);
       if (nextRoute === "utilisateurs") setUtilisateurs((await api<{ donnees: User[] }>("utilisateurs")).donnees);
+      if (nextRoute === "roles") {
+        const res = await api<{ donnees: Role[]; permissions: Permission[] }>("roles");
+        setRoles(res.donnees);
+        setPermissions(res.permissions);
+      }
+      if (nextRoute === "permissions") {
+        const res = await api<{ donnees: Permission[]; roles: Role[] }>("permissions");
+        setPermissions(res.donnees);
+        setRoles(res.roles);
+      }
       if (nextRoute === "notifications") setNotifications((await api<{ donnees: NotificationItem[] }>("notifications")).donnees);
       if (nextRoute === "audit") setAuditLogs((await api<{ donnees: { data: AuditLog[] } }>("audit")).donnees.data);
       if (nextRoute === "parametres") setParametres((await api<{ donnees: Parametre[] }>("parametres")).donnees);
@@ -269,6 +286,7 @@ export default function Home() {
     localStorage.setItem("koue_user", JSON.stringify(response.utilisateur));
     setUser(response.utilisateur);
     setEditingProfile(false);
+    showToast(t("profileSaved"));
   }
 
   async function savePlatform() {
@@ -290,6 +308,12 @@ export default function Home() {
     localStorage.setItem("koue_user", JSON.stringify(response.utilisateur));
     setUser(response.utilisateur);
     setEditingPlatform(false);
+    showToast(t("platformSaved"));
+  }
+
+  function showToast(message: string) {
+    setToast(message);
+    window.setTimeout(() => setToast((current) => current === message ? null : current), 3200);
   }
 
   function toggleNavigation() {
@@ -304,6 +328,7 @@ export default function Home() {
   function openRoute(nextRoute: string) {
     setRoute(nextRoute);
     setInfoMenuOpen(false);
+    setUsersMenuOpen(false);
     setMobileMenuOpen(false);
   }
 
@@ -369,6 +394,7 @@ export default function Home() {
     event.currentTarget.reset();
     await chargerBase();
     await chargerRoute("utilisateurs");
+    showToast(t("userSaved"));
   }
 
   async function submitParametres(event: FormEvent<HTMLFormElement>) {
@@ -400,9 +426,107 @@ export default function Home() {
     await chargerRoute("notifications");
   }
 
-  async function validerTransaction(transactionId: number, statut: "valide" | "rejete") {
-    await api(`transactions/${transactionId}/validation`, { method: "PATCH", body: JSON.stringify({ statut_validation: statut }) });
-    await chargerRoute("depenses");
+  async function validerTransaction(id: number, statut: "valide" | "rejete") {
+    try {
+      await api(`transactions/${id}/validation`, { method: "PATCH", body: JSON.stringify({ statut_validation: statut }) });
+      await chargerRoute("depenses");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Action impossible");
+    }
+  }
+
+  async function submitRole(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!roleDraft) return;
+    try {
+      const isNew = !roleDraft.id;
+      const url = isNew ? "roles" : `roles/${roleDraft.id}`;
+      const method = isNew ? "POST" : "PUT";
+      
+      await api(url, { method, body: JSON.stringify(roleDraft) });
+      setRoleDraft(null);
+      await chargerRoute("roles");
+      showToast(t(isNew ? "roleCreated" : "roleUpdated"));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erreur");
+    }
+  }
+
+  async function deleteRole(role: Role) {
+    const result = await Swal.fire({
+      title: t("deleteRoleConfirm") as string,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: 'var(--red)',
+      cancelButtonColor: 'var(--muted)',
+      confirmButtonText: t("delete") as string || 'Supprimer',
+      cancelButtonText: t("cancel") as string || 'Annuler',
+      background: 'var(--surface)',
+      color: 'var(--text)'
+    });
+    
+    if (result.isConfirmed) {
+      try {
+        await api(`roles/${role.id}`, { method: "DELETE" });
+        await chargerRoute("roles");
+        showToast(t("roleDeleted"));
+      } catch (err) {
+        Swal.fire({
+          title: "Erreur",
+          text: err instanceof Error ? err.message : "Erreur",
+          icon: 'error',
+          background: 'var(--surface)',
+          color: 'var(--text)'
+        });
+      }
+    }
+  }
+
+  async function submitPermission(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!permissionDraft) return;
+    try {
+      const isNew = !permissionDraft.id;
+      const url = isNew ? "permissions" : `permissions/${permissionDraft.id}`;
+      const method = isNew ? "POST" : "PUT";
+
+      await api(url, { method, body: JSON.stringify(permissionDraft) });
+      setPermissionDraft(null);
+      await chargerRoute("permissions");
+      showToast(t(isNew ? "permissionCreated" : "permissionUpdated"));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erreur");
+    }
+  }
+
+  async function deletePermission(permission: Permission) {
+    const result = await Swal.fire({
+      title: t("deletePermissionConfirm") as string,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "var(--red)",
+      cancelButtonColor: "var(--muted)",
+      confirmButtonText: t("delete") as string || "Supprimer",
+      cancelButtonText: t("cancel") as string || "Annuler",
+      background: "var(--surface)",
+      color: "var(--text)"
+    });
+
+    if (result.isConfirmed) {
+      try {
+        await api(`permissions/${permission.id}`, { method: "DELETE" });
+        await chargerRoute("permissions");
+        showToast(t("permissionDeleted"));
+      } catch (err) {
+        Swal.fire({
+          title: "Erreur",
+          text: err instanceof Error ? err.message : "Erreur",
+          icon: "error",
+          background: "var(--surface)",
+          color: "var(--text)"
+        });
+      }
+    }
   }
 
   async function appliquerFiltresGraphiques() {
@@ -483,15 +607,29 @@ export default function Home() {
         <aside className="sidebar">
           <div className="brand"><img src="/logo-koue.svg" alt="" /><strong>KOUE</strong></div>
           <nav>
-            {routes.map(([key, label, icon]) => (
-              <div key={key} className={key === "infos" ? "nav-item-with-popover" : undefined}>
-                <button className={route === key ? "active" : ""} onClick={() => {
+            {routes.map(([key, label, icon]) => {
+              const isUsersRoot = key === "utilisateurs";
+              const usersActive = route === "utilisateurs" || route === "roles" || route === "permissions";
+              return (
+              <div key={key} className={key === "infos" || isUsersRoot ? "nav-item-with-popover" : undefined}>
+                <button className={(route === key || (isUsersRoot && usersActive)) ? "active" : ""} onClick={() => {
+                  if (isUsersRoot) {
+                    setUsersMenuOpen((value) => !value);
+                    return;
+                  }
                   if (key === "infos") {
                     setInfoMenuOpen((value) => !value);
                     return;
                   }
                   openRoute(key);
-                }} title={t(label)} aria-label={t(label)} aria-expanded={key === "infos" ? infoMenuOpen : undefined}><span>{icon}</span>{t(label as any)}</button>
+                }} title={t(label)} aria-label={t(label)} aria-expanded={isUsersRoot ? usersMenuOpen : key === "infos" ? infoMenuOpen : undefined}><span>{icon}</span>{t(label as any)}</button>
+                {isUsersRoot && usersMenuOpen && (
+                  <div className="subnav" role="menu" aria-label={t("usersMenu")}>
+                    <button type="button" className={route === "utilisateurs" ? "active" : ""} onClick={() => openRoute("utilisateurs")}>{t("users")}</button>
+                    <button type="button" className={route === "roles" ? "active" : ""} onClick={() => openRoute("roles")}>{t("roles")}</button>
+                    <button type="button" className={route === "permissions" ? "active" : ""} onClick={() => openRoute("permissions")}>{t("permissions")}</button>
+                  </div>
+                )}
                 {key === "infos" && infoMenuOpen && (
                   <div className="subnav" role="menu" aria-label="Sous-menu Infos">
                     <button type="button" className={route === "info-plateforme" ? "active" : ""} onClick={() => { setRoute("info-plateforme"); setInfoMenuOpen(false); }}>{t("platform")}</button>
@@ -499,7 +637,7 @@ export default function Home() {
                   </div>
                 )}
               </div>
-            ))}
+            )})}
           </nav>
           <small>KOUECONSOLIDATED<br />Groupe multi-activités</small>
         </aside>
@@ -555,6 +693,7 @@ export default function Home() {
         </section>
       </main>
       <ThemePicker t={t} />
+      {toast && <div className="confirm-toast" role="status">{toast}</div>}
     </>
   );
 
@@ -744,7 +883,7 @@ export default function Home() {
         <Grid>
           <Panel title={t("newUser") ?? "Nouvel utilisateur"}>
             <form className="form compact" onSubmit={submitUtilisateur}>
-              <Select name="role_id" label="Rôle" items={refs.roles} />
+              <Select name="role_id" label="Rôle" items={roles.length > 0 ? roles : refs.roles} />
               <input name="nom" placeholder="Nom complet" required />
               <input name="email" type="email" placeholder="Email" required />
               <div style={{ position: "relative" }}>
@@ -760,6 +899,130 @@ export default function Home() {
             <Table heads={["Nom", "Email", "Rôle", "Téléphone", "Statut"]} rows={utilisateurs.map((u) => [u.nom, u.email, u.role?.nom ?? "-", u.telephone ?? "-", pill(u.statut ?? "actif")])} />
           </Panel>
         </Grid>
+      </>;
+    }
+
+    if (route === "roles") {
+      return <>
+        <PageTitle title={t("roles")} subtitle="Gestion des permissions" action={<button className="btn primary" onClick={() => setRoleDraft({ nom: "", description: "", permissions: [] })}>{t("addRole")}</button>} />
+        
+        {roleDraft && (
+          <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", zIndex: 2000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+            <Panel title={roleDraft.id ? t("editRole") : t("addRole")} style={{ width: "100%", maxWidth: 600, maxHeight: "90vh", overflowY: "auto", position: "relative" }}>
+              <button type="button" onClick={() => setRoleDraft(null)} style={{ position: "absolute", top: 20, right: 20, background: "none", border: "none", cursor: "pointer", fontSize: 20, color: "var(--text)" }}>✕</button>
+              <form className="form" onSubmit={submitRole}>
+                <div className="field-group">
+                  <label>{t("roleName")}</label>
+                  <input value={roleDraft.nom} onChange={e => setRoleDraft({...roleDraft, nom: e.target.value})} required />
+                </div>
+                <div className="field-group">
+                  <label>{t("roleDescription")}</label>
+                  <input value={roleDraft.description} onChange={e => setRoleDraft({...roleDraft, description: e.target.value})} />
+                </div>
+                
+                <h4 style={{ marginTop: 20, marginBottom: 10 }}>{t("permissions")}</h4>
+                <div className="permission-grid">
+                  {permissions.map(p => (
+                    <label key={p.id} className="permission-check">
+                      <input 
+                        type="checkbox" 
+                        checked={roleDraft.permissions.includes(p.id)}
+                        onChange={e => {
+                          const newPerms = e.target.checked 
+                            ? [...roleDraft.permissions, p.id] 
+                            : roleDraft.permissions.filter(id => id !== p.id);
+                          setRoleDraft({...roleDraft, permissions: newPerms});
+                        }} 
+                      />
+                      <span>{p.nom}</span>
+                    </label>
+                  ))}
+                </div>
+                
+                <div className="action-row" style={{ marginTop: 20 }}>
+                  <button type="button" className="btn secondary" onClick={() => setRoleDraft(null)}>{t("cancel")}</button>
+                  <button type="submit" className="btn primary">{t("save")}</button>
+                </div>
+              </form>
+            </Panel>
+          </div>
+        )}
+
+        <Panel title={t("roles")}>
+          <Table 
+            heads={["Nom", "Description", "Permissions", "Actions"]} 
+            rows={roles.map(r => [
+              <strong>{r.nom}</strong>, 
+              r.description ?? "-", 
+              pill(String(r.permissions?.length ?? 0) + " permissions"),
+              ["proprietaire", "super-admin-plateformes"].includes(r.slug ?? "") ? <span className="muted">Système</span> : (
+                <div className="icon-actions">
+                  <IconButton label={t("editRole")} onClick={() => setRoleDraft({ id: r.id, nom: r.nom, description: r.description ?? "", permissions: r.permissions?.map(p => p.id) ?? [] })} icon="edit" />
+                  <IconButton label={t("delete")} tone="danger" onClick={() => void deleteRole(r)} icon="delete" />
+                </div>
+              )
+            ])} 
+          />
+        </Panel>
+      </>;
+    }
+
+    if (route === "permissions") {
+      return <>
+        <PageTitle title={t("permissions")} subtitle={t("permissionsSubtitle")} action={<button className="btn primary" onClick={() => setPermissionDraft({ nom: "", roles: [] })}>{t("addPermission")}</button>} />
+
+        {permissionDraft && (
+          <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", zIndex: 2000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+            <Panel title={permissionDraft.id ? t("editPermission") : t("addPermission")} style={{ width: "100%", maxWidth: 600, maxHeight: "90vh", overflowY: "auto", position: "relative" }}>
+              <button type="button" onClick={() => setPermissionDraft(null)} style={{ position: "absolute", top: 20, right: 20, background: "none", border: "none", cursor: "pointer", fontSize: 20, color: "var(--text)" }}>x</button>
+              <form className="form" onSubmit={submitPermission}>
+                <div className="field-group">
+                  <label>{t("permissionName")}</label>
+                  <input value={permissionDraft.nom} onChange={e => setPermissionDraft({ ...permissionDraft, nom: e.target.value })} required />
+                </div>
+
+                <h4 style={{ marginTop: 20, marginBottom: 10 }}>{t("assignedRoles")}</h4>
+                <div className="permission-grid">
+                  {roles.map(r => (
+                    <label key={r.id} className="permission-check">
+                      <input
+                        type="checkbox"
+                        checked={permissionDraft.roles.includes(r.id)}
+                        onChange={e => {
+                          const newRoles = e.target.checked
+                            ? [...permissionDraft.roles, r.id]
+                            : permissionDraft.roles.filter(id => id !== r.id);
+                          setPermissionDraft({ ...permissionDraft, roles: newRoles });
+                        }}
+                      />
+                      <span>{r.nom}</span>
+                    </label>
+                  ))}
+                </div>
+
+                <div className="action-row" style={{ marginTop: 20 }}>
+                  <button type="button" className="btn secondary" onClick={() => setPermissionDraft(null)}>{t("cancel")}</button>
+                  <button type="submit" className="btn primary">{t("save")}</button>
+                </div>
+              </form>
+            </Panel>
+          </div>
+        )}
+
+        <Panel title={t("existingPermissions")}>
+          <Table
+            heads={["Nom", "Slug", t("roles"), "Actions"]}
+            rows={permissions.map(p => [
+              <strong>{p.nom}</strong>,
+              p.slug ?? "-",
+              pill(String(p.roles?.length ?? 0) + " " + t("roles").toLowerCase()),
+              <div className="icon-actions">
+                <IconButton label={t("editPermission")} onClick={() => setPermissionDraft({ id: p.id, nom: p.nom, roles: p.roles?.map(r => r.id) ?? [] })} icon="edit" />
+                <IconButton label={t("delete")} tone="danger" onClick={() => void deletePermission(p)} icon="delete" />
+              </div>
+            ])}
+          />
+        </Panel>
       </>;
     }
 
@@ -917,8 +1180,8 @@ function Card({ label, value }: { label: string; value: ReactNode }) {
   return <article className="card"><span>{label}</span><strong>{value}</strong></article>;
 }
 
-function Panel({ title, children }: { title: string; children: ReactNode }) {
-  return <section className="panel"><h3>{title}</h3>{children}</section>;
+function Panel({ title, children, style }: { title: string; children: ReactNode; style?: CSSProperties }) {
+  return <section className="panel" style={style}><h3>{title}</h3>{children}</section>;
 }
 
 function Grid({ children }: { children: ReactNode }) {
@@ -927,6 +1190,29 @@ function Grid({ children }: { children: ReactNode }) {
 
 function ActionGroup({ children }: { children: ReactNode }) {
   return <span className="action-group">{children}</span>;
+}
+
+function IconButton({ label, icon, tone = "default", onClick }: { label: string; icon: "edit" | "delete"; tone?: "default" | "danger"; onClick: () => void }) {
+  return (
+    <button className={`table-icon-button ${tone === "danger" ? "danger" : ""}`} type="button" onClick={onClick} title={label} aria-label={label}>
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        {icon === "edit" ? (
+          <>
+            <path d="M12 20h9" />
+            <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+          </>
+        ) : (
+          <>
+            <path d="M3 6h18" />
+            <path d="M8 6V4h8v2" />
+            <path d="M19 6l-1 14H6L5 6" />
+            <path d="M10 11v5" />
+            <path d="M14 11v5" />
+          </>
+        )}
+      </svg>
+    </button>
+  );
 }
 
 function Table({ heads, rows }: { heads: string[]; rows: ReactNode[][] }) {

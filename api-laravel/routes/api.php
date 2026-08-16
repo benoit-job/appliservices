@@ -16,6 +16,8 @@ use App\Http\Controllers\Api\V1\ReferenceController;
 use App\Http\Controllers\Api\V1\TransactionController;
 use App\Http\Controllers\Api\V1\TypeActiviteController;
 use App\Http\Controllers\Api\V1\UtilisateurController;
+use App\Http\Controllers\Api\V1\RoleController;
+use App\Http\Controllers\Api\V1\PermissionController;
 use App\Models\ArticleInventaire;
 use App\Models\Transaction;
 use Illuminate\Support\Facades\Route;
@@ -65,6 +67,8 @@ Route::prefix('v1')->group(function () {
         Route::apiResource('categories-transactions', CategorieTransactionController::class);
 
         Route::apiResource('utilisateurs', UtilisateurController::class)->except(['show']);
+        Route::apiResource('roles', RoleController::class)->except(['show']);
+        Route::apiResource('permissions', PermissionController::class)->except(['show']);
         Route::get('notifications', [NotificationController::class, 'index']);
         Route::patch('notifications/{notification}/lue', [NotificationController::class, 'marquerLue']);
         Route::get('audit', [AuditController::class, 'index']);

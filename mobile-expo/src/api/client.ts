@@ -41,3 +41,35 @@ export async function api<T>(path: string, options: RequestInit & { skipAuth?: b
   }
   return json as T & { statut: "ok" };
 }
+
+export async function getRoles() {
+  return api<{ donnees: any[]; permissions: any[] }>("roles");
+}
+
+export async function createRole(data: { nom: string; description?: string; permissions?: number[] }) {
+  return api("roles", { method: "POST", body: JSON.stringify(data) });
+}
+
+export async function updateRole(id: number, data: { nom: string; description?: string; permissions?: number[] }) {
+  return api(`roles/${id}`, { method: "PUT", body: JSON.stringify(data) });
+}
+
+export async function deleteRole(id: number) {
+  return api(`roles/${id}`, { method: "DELETE" });
+}
+
+export async function getPermissions() {
+  return api<{ donnees: any[]; roles: any[] }>("permissions");
+}
+
+export async function createPermission(data: { nom: string; roles?: number[] }) {
+  return api("permissions", { method: "POST", body: JSON.stringify(data) });
+}
+
+export async function updatePermission(id: number, data: { nom: string; roles?: number[] }) {
+  return api(`permissions/${id}`, { method: "PUT", body: JSON.stringify(data) });
+}
+
+export async function deletePermission(id: number) {
+  return api(`permissions/${id}`, { method: "DELETE" });
+}

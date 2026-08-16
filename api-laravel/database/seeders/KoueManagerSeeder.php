@@ -7,6 +7,7 @@ use App\Models\ArticleInventaire;
 use App\Models\CategorieTransaction;
 use App\Models\EcheanceVersement;
 use App\Models\Parametre;
+use App\Models\Permission;
 use App\Models\Plateforme;
 use App\Models\Role;
 use App\Models\TypeActivite;
@@ -14,11 +15,33 @@ use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 
 class KoueManagerSeeder extends Seeder
 {
     public function run(): void
     {
+        $permissionsBase = [
+            'Gérer les plateformes',
+            'Gérer les utilisateurs',
+            'Gérer les rôles et permissions',
+            'Gérer les types d\'activités',
+            'Gérer les activités',
+            'Saisir des transactions',
+            'Valider des transactions',
+            'Voir les rapports',
+            'Gérer l\'inventaire',
+            'Gérer les paramètres',
+        ];
+
+        foreach ($permissionsBase as $permNom) {
+            Permission::updateOrCreate(
+                ['slug' => Str::slug($permNom)],
+                ['nom' => $permNom]
+            );
+        }
+
+        $allPermissions = Permission::all()->pluck('id');
         $roles = [
             ['id' => 1, 'nom' => 'Propriétaire', 'slug' => 'proprietaire', 'description' => 'Accès complet à la plateforme'],
             ['id' => 2, 'nom' => 'Gestionnaire', 'slug' => 'gestionnaire', 'description' => 'Gestion quotidienne et validation'],
@@ -27,8 +50,11 @@ class KoueManagerSeeder extends Seeder
             ['id' => 5, 'nom' => 'Super-admin plateformes', 'slug' => 'super-admin-plateformes', 'description' => 'Gestion des plateformes KOUECONSOLIDATED'],
         ];
 
-        foreach ($roles as $role) {
-            Role::updateOrCreate(['id' => $role['id']], $role);
+        foreach ($roles as $roleData) {
+            $role = Role::updateOrCreate(['id' => $roleData['id']], $roleData);
+            if (in_array($role->slug, ['proprietaire', 'super-admin-plateformes'])) {
+                $role->permissions()->sync($allPermissions);
+            }
         }
 
         $plateforme = Plateforme::updateOrCreate(

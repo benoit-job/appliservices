@@ -22,7 +22,8 @@ import { ChartFilters, defaultChartFilters, filtersToQuery, Graphique } from "./
 import { createAppStyles, type AppStyles } from "./createAppStyles";
 import { DEFAULT_THEME_ID, THEME_STORAGE_KEY, getTheme, type ThemeColors, type ThemeId } from "./themes";
 
-type Role = { id: number; nom: string; slug?: string };
+type Permission = { id: number; nom: string; slug: string; roles?: Role[] };
+type Role = { id: number; nom: string; slug?: string; description?: string; permissions?: Permission[] };
 type User = { id: number; role_id?: number; nom: string; email: string; telephone?: string; statut?: string; role?: { nom: string }; plateforme?: { id?: number; nom?: string; slug?: string; email_contact?: string; telephone_contact?: string; adresse?: string; image_url?: string | null; statut?: string; limite_utilisateurs?: number; limite_activites?: number } };
 type Reference = { id: number; nom: string; code?: string; nature?: string };
 type Resume = { activites: number; revenus: number; decaissements: number; resultat: number; retards: number; inventaire: number };
@@ -53,7 +54,7 @@ const routes = [
   ["parametres", "settings"],
 ] as const;
 
-type RouteKey = (typeof routes)[number][0] | "notifications" | "info-plateforme" | "info-compte";
+type RouteKey = (typeof routes)[number][0] | "roles" | "permissions" | "notifications" | "info-plateforme" | "info-compte";
 const linear = (value: number) => value;
 const today = () => new Date().toISOString().slice(0, 10);
 const defaultTheme = getTheme(DEFAULT_THEME_ID);
@@ -114,11 +115,13 @@ export default function App() {
   const [user, setUserState] = useState<User | null>(null);
   const [route, setRoute] = useState<RouteKey>("tableau-bord");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [usersMenuOpen, setUsersMenuOpen] = useState(false);
   
   const [lang, setLang] = useState<Language>("fr");
   const [langMenuOpen, setLangMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [notifPopupOpen, setNotifPopupOpen] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
   const t = (key: Parameters<typeof getTranslation>[1]) => getTranslation(lang, key);
   const [themeId, setThemeId] = useState<ThemeId>(DEFAULT_THEME_ID);
   const [themePickerOpen, setThemePickerOpen] = useState(false);
@@ -141,6 +144,8 @@ export default function App() {
   const [rapport, setRapport] = useState<Rapport | null>(null);
   const [utilisateurs, setUtilisateurs] = useState<User[]>([]);
   const [typesActivites, setTypesActivites] = useState<TypeActivite[]>([]);
+  const [roles, setRoles] = useState<Role[]>([]);
+  const [permissions, setPermissions] = useState<Permission[]>([]);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [parametres, setParametres] = useState<Parametre[]>([]);
@@ -177,6 +182,8 @@ export default function App() {
     mode_paiement: "especes",
     note: "",
   });
+  const [roleDraft, setRoleDraft] = useState<{ id?: number; nom: string; description: string; permissions: number[] } | null>(null);
+  const [permissionDraft, setPermissionDraft] = useState<{ id?: number; nom: string; roles: number[] } | null>(null);
   const [articleDraft, setArticleDraft] = useState({
     activite_id: "",
     nom: "",
@@ -212,6 +219,12 @@ export default function App() {
     statut: "actif",
   });
   const [paramDrafts, setParamDrafts] = useState<Record<string, string>>({});
+  const [showRoleForm, setShowRoleForm] = useState(false);
+  const [showPermissionForm, setShowPermissionForm] = useState(false);
+  const [showUserForm, setShowUserForm] = useState(false);
+  const [searchRole, setSearchRole] = useState("");
+  const [searchPermission, setSearchPermission] = useState("");
+  const [searchUser, setSearchUser] = useState("");
   const themed = (node: React.ReactNode) => (
     <AppThemeContext.Provider value={{ styles, colors }}>
       <AppLocaleContext.Provider value={{ lang, t }}>{node}</AppLocaleContext.Provider>
@@ -268,6 +281,18 @@ export default function App() {
   function changeTheme(nextTheme: ThemeId) {
     setThemeId(nextTheme);
     void AsyncStorage.setItem(THEME_STORAGE_KEY, nextTheme);
+  }
+
+  function routeLabelKey(currentRoute: RouteKey) {
+    if (currentRoute === "roles") return "roles";
+    if (currentRoute === "permissions") return "permissions";
+    if (currentRoute === "info-plateforme" || currentRoute === "info-compte") return "infos";
+    return (routes.find((item) => item[0] === currentRoute)?.[1] as string) ?? "dashboard";
+  }
+
+  function showToast(message: string) {
+    setToast(message);
+    setTimeout(() => setToast((current) => current === message ? null : current), 3200);
   }
 
   async function handleLogin() {
@@ -353,6 +378,7 @@ export default function App() {
   async function openRoute(nextRoute: RouteKey) {
     setRoute(nextRoute);
     setMenuOpen(false);
+    setUsersMenuOpen(false);
     setRefreshing(true);
     try {
       if (nextRoute === "tableau-bord") setDashboard(await api<Dashboard>("tableau-bord"));
@@ -367,6 +393,16 @@ export default function App() {
       if (nextRoute === "rapports") setRapport((await api<{ donnees: Rapport }>("rapports/bilan")).donnees);
       if (nextRoute === "types-activites") setTypesActivites((await api<{ donnees: TypeActivite[] }>("types-activites")).donnees);
       if (nextRoute === "utilisateurs") setUtilisateurs((await api<{ donnees: User[] }>("utilisateurs")).donnees);
+      if (nextRoute === "roles") {
+        const res = await api<{ donnees: Role[]; permissions: Permission[] }>("roles");
+        setRoles(res.donnees);
+        setPermissions(res.permissions);
+      }
+      if (nextRoute === "permissions") {
+        const res = await api<{ donnees: Permission[]; roles: Role[] }>("permissions");
+        setPermissions(res.donnees);
+        setRoles(res.roles);
+      }
       if (nextRoute === "notifications") setNotifications((await api<{ donnees: NotificationItem[] }>("notifications")).donnees);
       if (nextRoute === "audit") setAuditLogs((await api<{ donnees: { data: AuditLog[] } }>("audit")).donnees.data);
       if (nextRoute === "parametres") {
@@ -498,6 +534,87 @@ export default function App() {
     setUserDraft({ role_id: "", nom: "", email: "", mot_de_passe: "", telephone: "", statut: "actif" });
     await loadData();
     await openRoute("utilisateurs");
+    showToast(t("userSaved"));
+  }
+
+  async function submitRoleMobile() {
+    if (!roleDraft?.nom) {
+      Alert.alert("Information manquante", "Renseignez le nom du rôle.");
+      return;
+    }
+
+    try {
+      const isEdit = Boolean(roleDraft.id);
+      if (roleDraft.id) {
+        await api(`roles/${roleDraft.id}`, { method: "PUT", body: JSON.stringify({ nom: roleDraft.nom, description: roleDraft.description, permissions: roleDraft.permissions }) });
+      } else {
+        await api("roles", { method: "POST", body: JSON.stringify({ nom: roleDraft.nom, description: roleDraft.description, permissions: roleDraft.permissions }) });
+      }
+      setRoleDraft(null);
+      await loadData();
+      showToast(t(isEdit ? "roleUpdated" : "roleCreated"));
+    } catch (error) {
+      Alert.alert("Erreur", error instanceof Error ? error.message : "Erreur lors de la sauvegarde du rôle");
+    }
+  }
+
+  async function deleteRoleMobile(id: number) {
+    Alert.alert("Confirmation", t("deleteRoleConfirm"), [
+      { text: t("cancel"), style: "cancel" },
+      {
+        text: t("delete"),
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await api(`roles/${id}`, { method: "DELETE" });
+            await loadData();
+            showToast(t("roleDeleted"));
+          } catch (error) {
+            Alert.alert("Erreur", error instanceof Error ? error.message : "Erreur lors de la suppression du rôle");
+          }
+        }
+      }
+    ]);
+  }
+
+  async function submitPermissionMobile() {
+    if (!permissionDraft?.nom) {
+      Alert.alert("Information manquante", "Renseignez le nom de la permission.");
+      return;
+    }
+
+    try {
+      const isEdit = Boolean(permissionDraft.id);
+      if (permissionDraft.id) {
+        await api(`permissions/${permissionDraft.id}`, { method: "PUT", body: JSON.stringify({ nom: permissionDraft.nom, roles: permissionDraft.roles }) });
+      } else {
+        await api("permissions", { method: "POST", body: JSON.stringify({ nom: permissionDraft.nom, roles: permissionDraft.roles }) });
+      }
+      setPermissionDraft(null);
+      await loadData();
+      showToast(t(isEdit ? "permissionUpdated" : "permissionCreated"));
+    } catch (error) {
+      Alert.alert("Erreur", error instanceof Error ? error.message : "Erreur lors de la sauvegarde de la permission");
+    }
+  }
+
+  async function deletePermissionMobile(id: number) {
+    Alert.alert("Confirmation", t("deletePermissionConfirm"), [
+      { text: t("cancel"), style: "cancel" },
+      {
+        text: t("delete"),
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await api(`permissions/${id}`, { method: "DELETE" });
+            await loadData();
+            showToast(t("permissionDeleted"));
+          } catch (error) {
+            Alert.alert("Erreur", error instanceof Error ? error.message : "Erreur lors de la suppression de la permission");
+          }
+        }
+      }
+    ]);
   }
 
   async function submitParametresMobile() {
@@ -640,7 +757,7 @@ export default function App() {
             <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.brand}>KOUE MANAGER</Text>
-                <Text style={styles.muted} numberOfLines={1} ellipsizeMode="tail">{t((routes.find((r) => r[0] === route)?.[1] as any) ?? "")} - {user?.nom}</Text>
+                <Text style={styles.muted} numberOfLines={1} ellipsizeMode="tail">{t(routeLabelKey(route))} - {user?.nom}</Text>
               </View>
             </View>
           </View>
@@ -715,18 +832,46 @@ export default function App() {
           <View style={[StyleSheet.absoluteFill, { zIndex: 999 }]}>
             <Pressable style={styles.menuOverlay} onPress={() => setMenuOpen(false)} />
             <View style={styles.menuWrap}>
-              {routes.map(([key, label]) => (
+              {routes.map(([key, label]) => {
+                const isUsersRoot = key === "utilisateurs";
+                const usersActive = route === "utilisateurs" || route === "roles" || route === "permissions";
+                return (
                 <View key={key}>
-                  <Pressable style={[styles.menuItem, (route === key || (key === "infos" && (route === "info-plateforme" || route === "info-compte"))) && styles.menuItemActive]} onPress={() => {
+                  <Pressable style={[styles.menuItem, (route === key || (isUsersRoot && usersActive) || (key === "infos" && (route === "info-plateforme" || route === "info-compte"))) && styles.menuItemActive]} onPress={() => {
+                    if (isUsersRoot) {
+                      setUsersMenuOpen((value) => !value);
+                      return;
+                    }
                     if (key === "infos") {
                       setRoute("infos");
                       return;
                     }
-                    setRoute(key);
-                    setMenuOpen(false);
+                    void openRoute(key);
                   }}>
-                    <Text style={[styles.menuText, (route === key || (key === "infos" && (route === "info-plateforme" || route === "info-compte"))) && styles.menuTextActive]}>{t(label)}</Text>
+                    <Text style={[styles.menuText, (route === key || (isUsersRoot && usersActive) || (key === "infos" && (route === "info-plateforme" || route === "info-compte"))) && styles.menuTextActive]}>{t(label)}</Text>
                   </Pressable>
+                  {isUsersRoot && (usersMenuOpen || usersActive) && (
+                    <View style={styles.submenuWrap}>
+                      <Pressable
+                        style={[styles.submenuItem, route === "utilisateurs" && styles.submenuItemActive]}
+                        onPress={() => { void openRoute("utilisateurs"); }}
+                      >
+                        <Text style={[styles.submenuText, route === "utilisateurs" && styles.submenuTextActive]}>{t("users")}</Text>
+                      </Pressable>
+                      <Pressable
+                        style={[styles.submenuItem, route === "roles" && styles.submenuItemActive]}
+                        onPress={() => { void openRoute("roles"); }}
+                      >
+                        <Text style={[styles.submenuText, route === "roles" && styles.submenuTextActive]}>{t("roles")}</Text>
+                      </Pressable>
+                      <Pressable
+                        style={[styles.submenuItem, route === "permissions" && styles.submenuItemActive]}
+                        onPress={() => { void openRoute("permissions"); }}
+                      >
+                        <Text style={[styles.submenuText, route === "permissions" && styles.submenuTextActive]}>{t("permissions")}</Text>
+                      </Pressable>
+                    </View>
+                  )}
                   {key === "infos" && (route === "infos" || route === "info-plateforme" || route === "info-compte") && (
                     <View style={{ position: "absolute", top: 40, left: 10, width: 200, backgroundColor: colors.surface, borderRadius: 8, padding: 8, shadowColor: "#000", shadowOpacity: 0.15, shadowRadius: 10, elevation: 10, zIndex: 1000, borderWidth: 1, borderColor: colors.line }}>
                       <Pressable
@@ -744,7 +889,7 @@ export default function App() {
                     </View>
                   )}
                 </View>
-              ))}
+              )})}
             </View>
           </View>
         )}
@@ -762,6 +907,11 @@ export default function App() {
           onClose={() => setThemePickerOpen(false)}
           onSelect={changeTheme}
         />
+        {toast && (
+          <View style={styles.toast} pointerEvents="none">
+            <Text style={styles.toastText}>{toast}</Text>
+          </View>
+        )}
       </View>
     </SafeAreaView>
   );
@@ -932,21 +1082,193 @@ export default function App() {
     }
 
     if (route === "utilisateurs") {
+      const filteredUsers = utilisateurs.filter(u => !searchUser || u.nom.toLowerCase().includes(searchUser.toLowerCase()) || u.email.toLowerCase().includes(searchUser.toLowerCase()));
       return (
         <>
           <SectionTitle title={t("users")} subtitle={t("usersSubtitle")} />
-          <FormCard title={t("newUser")}>
-            <ChoiceGroup label={t("role")} items={references.roles} selected={userDraft.role_id} onSelect={(value) => setUserDraft((draft) => ({ ...draft, role_id: value }))} />
-            <Field label={t("name")} value={userDraft.nom} onChangeText={(value) => setUserDraft((draft) => ({ ...draft, nom: value }))} />
-            <Field label={t("email")} value={userDraft.email} onChangeText={(value) => setUserDraft((draft) => ({ ...draft, email: value }))} autoCapitalize="none" keyboardType="email-address" />
-            <Field label={t("password")} value={userDraft.mot_de_passe} onChangeText={(value) => setUserDraft((draft) => ({ ...draft, mot_de_passe: value }))} secureTextEntry showPassword={showUserPassword} onTogglePassword={() => setShowUserPassword(!showUserPassword)} />
-            <Field label={t("phone")} value={userDraft.telephone} onChangeText={(value) => setUserDraft((draft) => ({ ...draft, telephone: value }))} keyboardType="phone-pad" />
-            <ChoiceGroup label={t("status")} items={userStatusOptions} selected={userDraft.statut} onSelect={(value) => setUserDraft((draft) => ({ ...draft, statut: value }))} />
-            <Pressable style={styles.primary} onPress={() => void submitUtilisateurMobile()}><Text style={styles.primaryText}>{t("save")}</Text></Pressable>
-          </FormCard>
+          
+          <View style={{ flexDirection: "row", gap: 10, alignItems: "center" }}>
+            <TextInput 
+              style={[styles.input, { flex: 1, minHeight: 40 }]} 
+              placeholder={t("search")} 
+              value={searchUser} 
+              onChangeText={setSearchUser} 
+            />
+            <Pressable 
+              style={[styles.primary, { minHeight: 40, paddingHorizontal: 16 }]} 
+              onPress={() => { setShowUserForm(true); setUserDraft({ role_id: "", nom: "", email: "", mot_de_passe: "", telephone: "", statut: "actif" }); }}
+            >
+              <Text style={styles.primaryText}>+ {t("add")}</Text>
+            </Pressable>
+          </View>
+
+          {showUserForm && (
+            <FormCard title={t("newUser")}>
+              <ChoiceGroup label={t("role")} items={references.roles} selected={userDraft.role_id} onSelect={(value) => setUserDraft((draft) => ({ ...draft, role_id: value }))} />
+              <Field label={t("name")} value={userDraft.nom} onChangeText={(value) => setUserDraft((draft) => ({ ...draft, nom: value }))} />
+              <Field label={t("email")} value={userDraft.email} onChangeText={(value) => setUserDraft((draft) => ({ ...draft, email: value }))} autoCapitalize="none" keyboardType="email-address" />
+              <Field label={t("password")} value={userDraft.mot_de_passe} onChangeText={(value) => setUserDraft((draft) => ({ ...draft, mot_de_passe: value }))} secureTextEntry showPassword={showUserPassword} onTogglePassword={() => setShowUserPassword(!showUserPassword)} />
+              <Field label={t("phone")} value={userDraft.telephone} onChangeText={(value) => setUserDraft((draft) => ({ ...draft, telephone: value }))} keyboardType="phone-pad" />
+              <ChoiceGroup label={t("status")} items={userStatusOptions} selected={userDraft.statut} onSelect={(value) => setUserDraft((draft) => ({ ...draft, statut: value }))} />
+              <View style={{ flexDirection: "row", gap: 12, marginTop: 10 }}>
+                <Pressable style={[styles.primary, { flex: 1 }]} onPress={() => { void submitUtilisateurMobile(); setShowUserForm(false); }}><Text style={styles.primaryText}>{t("save")}</Text></Pressable>
+                <Pressable style={[styles.secondary, { flex: 1 }]} onPress={() => setShowUserForm(false)}><Text style={styles.secondaryText}>{t("cancel")}</Text></Pressable>
+              </View>
+            </FormCard>
+          )}
+
           <ListCard title={t("accounts")} empty={t("noUsers")}>
-            {utilisateurs.map((item) => (
+            {filteredUsers.map((item) => (
               <DataRow key={item.id ?? item.email} title={item.nom} subtitle={`${item.email} - ${item.telephone ?? "-"}`} value={item.role?.nom ?? t("roleFallback")} />
+            ))}
+          </ListCard>
+        </>
+      );
+    }
+
+    if (route === "roles") {
+      const filteredRoles = roles.filter(r => !searchRole || r.nom.toLowerCase().includes(searchRole.toLowerCase()));
+      return (
+        <>
+          <SectionTitle title={t("roles")} subtitle={t("rolesSubtitle")} />
+          
+          <View style={{ flexDirection: "row", gap: 10, alignItems: "center" }}>
+            <TextInput 
+              style={[styles.input, { flex: 1, minHeight: 40 }]} 
+              placeholder={t("search")} 
+              value={searchRole} 
+              onChangeText={setSearchRole} 
+            />
+            <Pressable 
+              style={[styles.primary, { minHeight: 40, paddingHorizontal: 16 }]} 
+              onPress={() => { setShowRoleForm(true); setRoleDraft(null); }}
+            >
+              <Text style={styles.primaryText}>+ {t("add")}</Text>
+            </Pressable>
+          </View>
+
+          {showRoleForm && (
+            <FormCard title={roleDraft ? t("editRole") : t("addRole")}>
+              <Field label={t("roleName")} value={roleDraft?.nom ?? ""} onChangeText={(value) => setRoleDraft((draft) => draft ? { ...draft, nom: value } : { nom: value, description: "", permissions: [] })} />
+              <Field label={t("roleDescription")} value={roleDraft?.description ?? ""} onChangeText={(value) => setRoleDraft((draft) => draft ? { ...draft, description: value } : { nom: "", description: value, permissions: [] })} multiline />
+              <Text style={styles.inputLabel}>{t("permissions")}</Text>
+              <View style={{ gap: 8, maxHeight: 200 }}>
+                <ScrollView nestedScrollEnabled>
+                  {permissions.map((perm) => {
+                    const isChecked = (roleDraft?.permissions ?? []).includes(perm.id);
+                    return (
+                      <Pressable 
+                        key={perm.id} 
+                        style={styles.checkRow} 
+                        onPress={() => {
+                          const currentPerms = roleDraft?.permissions ?? [];
+                          const newPerms = isChecked ? currentPerms.filter((id) => id !== perm.id) : [...currentPerms, perm.id];
+                          setRoleDraft((draft) => draft ? { ...draft, permissions: newPerms } : { nom: "", description: "", permissions: newPerms });
+                        }}
+                      >
+                        <View style={[styles.checkBox, isChecked && styles.checkBoxActive]}>
+                          {isChecked && <View style={styles.checkMark} />}
+                        </View>
+                        <Text style={styles.checkText}>{perm.nom}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+              <View style={{ flexDirection: "row", gap: 12 }}>
+                <Pressable style={[styles.primary, { flex: 1 }]} onPress={() => { void submitRoleMobile(); setShowRoleForm(false); }}><Text style={styles.primaryText}>{t("save")}</Text></Pressable>
+                <Pressable style={[styles.secondary, { flex: 1 }]} onPress={() => { setRoleDraft(null); setShowRoleForm(false); }}><Text style={styles.secondaryText}>{t("cancel")}</Text></Pressable>
+              </View>
+            </FormCard>
+          )}
+
+          <ListCard title={t("existingRoles")} empty={t("noData")}>
+            {filteredRoles.map((item) => (
+              <View key={item.id} style={styles.row}>
+                <View style={styles.rowText}>
+                  <Text style={styles.rowTitle}>{item.nom}</Text>
+                  <Text style={styles.rowSubtitle}>{item.description ?? ""}</Text>
+                </View>
+                <Text style={{ color: colors.blue, fontWeight: "700" }}>{`${item.permissions?.length ?? 0} ${t("permissions")}`}</Text>
+                <View style={styles.iconActions}>
+                  <ActionIconButton icon="edit" label={t("editRole")} onPress={() => { setRoleDraft({ id: item.id, nom: item.nom, description: item.description ?? "", permissions: item.permissions?.map((p) => p.id) ?? [] }); setShowRoleForm(true); }} />
+                  <ActionIconButton icon="delete" label={t("delete")} danger onPress={() => void deleteRoleMobile(item.id)} />
+                </View>
+              </View>
+            ))}
+          </ListCard>
+        </>
+      );
+    }
+
+    if (route === "permissions") {
+      const filteredPermissions = permissions.filter(p => !searchPermission || p.nom.toLowerCase().includes(searchPermission.toLowerCase()));
+      return (
+        <>
+          <SectionTitle title={t("permissions")} subtitle={t("permissionsSubtitle")} />
+          
+          <View style={{ flexDirection: "row", gap: 10, alignItems: "center" }}>
+            <TextInput 
+              style={[styles.input, { flex: 1, minHeight: 40 }]} 
+              placeholder={t("search")} 
+              value={searchPermission} 
+              onChangeText={setSearchPermission} 
+            />
+            <Pressable 
+              style={[styles.primary, { minHeight: 40, paddingHorizontal: 16 }]} 
+              onPress={() => { setShowPermissionForm(true); setPermissionDraft(null); }}
+            >
+              <Text style={styles.primaryText}>+ {t("add")}</Text>
+            </Pressable>
+          </View>
+
+          {showPermissionForm && (
+            <FormCard title={permissionDraft ? t("editPermission") : t("addPermission")}>
+              <Field label={t("permissionName")} value={permissionDraft?.nom ?? ""} onChangeText={(value) => setPermissionDraft((draft) => draft ? { ...draft, nom: value } : { nom: value, roles: [] })} />
+              <Text style={styles.inputLabel}>{t("assignedRoles")}</Text>
+              <View style={{ gap: 8, maxHeight: 200 }}>
+                <ScrollView nestedScrollEnabled>
+                  {roles.map((role) => {
+                    const isChecked = (permissionDraft?.roles ?? []).includes(role.id);
+                    return (
+                      <Pressable 
+                        key={role.id} 
+                        style={styles.checkRow} 
+                        onPress={() => {
+                          const currentRoles = permissionDraft?.roles ?? [];
+                          const newRoles = isChecked ? currentRoles.filter((id) => id !== role.id) : [...currentRoles, role.id];
+                          setPermissionDraft((draft) => draft ? { ...draft, roles: newRoles } : { nom: "", roles: newRoles });
+                        }}
+                      >
+                        <View style={[styles.checkBox, isChecked && styles.checkBoxActive]}>
+                          {isChecked && <View style={styles.checkMark} />}
+                        </View>
+                        <Text style={styles.checkText}>{role.nom}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+              <View style={{ flexDirection: "row", gap: 12 }}>
+                <Pressable style={[styles.primary, { flex: 1 }]} onPress={() => { void submitPermissionMobile(); setShowPermissionForm(false); }}><Text style={styles.primaryText}>{t("save")}</Text></Pressable>
+                <Pressable style={[styles.secondary, { flex: 1 }]} onPress={() => { setPermissionDraft(null); setShowPermissionForm(false); }}><Text style={styles.secondaryText}>{t("cancel")}</Text></Pressable>
+              </View>
+            </FormCard>
+          )}
+
+          <ListCard title={t("existingPermissions")} empty={t("noData")}>
+            {filteredPermissions.map((item) => (
+              <View key={item.id} style={styles.row}>
+                <View style={styles.rowText}>
+                  <Text style={styles.rowTitle}>{item.nom}</Text>
+                  <Text style={styles.rowSubtitle}>{item.slug}</Text>
+                </View>
+                <Text style={{ color: colors.gold || "#f59e0b", fontWeight: "700" }}>{`${item.roles?.length ?? 0} rôle(s)`}</Text>
+                <View style={styles.iconActions}>
+                  <ActionIconButton icon="edit" label={t("editPermission")} onPress={() => { setPermissionDraft({ id: item.id, nom: item.nom, roles: item.roles?.map((r) => r.id) ?? [] }); setShowPermissionForm(true); }} />
+                  <ActionIconButton icon="delete" label={t("delete")} danger onPress={() => void deletePermissionMobile(item.id)} />
+                </View>
+              </View>
             ))}
           </ListCard>
         </>
@@ -1363,6 +1685,43 @@ function ActionRow({
             <Text style={styles.secondaryText}>{label}</Text>
           </Pressable>
         ))}
+      </View>
+    </View>
+  );
+}
+
+function ActionIconButton({ icon, label, danger = false, onPress }: { icon: "edit" | "delete"; label: string; danger?: boolean; onPress: () => void }) {
+  const { styles } = useAppTheme();
+  return (
+    <Pressable
+      style={[styles.actionIconButton, danger && styles.actionIconButtonDanger]}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+    >
+      {icon === "edit" ? <EditIcon danger={danger} /> : <DeleteIcon danger={danger} />}
+    </Pressable>
+  );
+}
+
+function EditIcon({ danger = false }: { danger?: boolean }) {
+  const { styles } = useAppTheme();
+  return (
+    <View style={styles.editIcon} pointerEvents="none">
+      <View style={[styles.editIconBody, danger && styles.iconDanger]} />
+      <View style={[styles.editIconTip, danger && styles.iconDangerBorder]} />
+    </View>
+  );
+}
+
+function DeleteIcon({ danger = false }: { danger?: boolean }) {
+  const { styles } = useAppTheme();
+  return (
+    <View style={styles.deleteIcon} pointerEvents="none">
+      <View style={[styles.deleteIconLid, danger && styles.iconDanger]} />
+      <View style={[styles.deleteIconCan, danger && styles.iconDangerBorder]}>
+        <View style={[styles.deleteIconLine, danger && styles.iconDanger]} />
+        <View style={[styles.deleteIconLine, danger && styles.iconDanger]} />
       </View>
     </View>
   );
